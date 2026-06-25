@@ -44,12 +44,22 @@ def validate_entity_schemas() -> list[dict[str, Any]]:
     conn.close()
     
     results = []
+    VALID_TYPES = {"character", "location", "item", "faction", "general"}
     for ent in entities:
         ent_id = ent["id"]
         ent_name = ent["name"]
         ent_type = ent["type"]
         meta = get_metadata(ent_id)
         
+        if ent_type not in VALID_TYPES:
+            results.append({
+                "status": "warning",
+                "type": "schema",
+                "entity_id": ent_id,
+                "message": f"Note '{ent_name}' has unrecognized type '{ent_type}'. Allowed types are: {', '.join(sorted(VALID_TYPES))}."
+            })
+            continue
+            
         if ent_type == "character":
             # 1. Required fields
             required = ["status", "location", "age"]

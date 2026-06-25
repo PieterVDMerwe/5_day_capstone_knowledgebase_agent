@@ -18,3 +18,4 @@ Wait for user input at each ✋ pause before continuing.
 - **Do NOT automate browser UI testing** or run automated multi-turn integration test scripts that query real LLM endpoints. This rapidly depletes the user's free tier quota (raising `429 RESOURCE_EXHAUSTED` errors).
 - **Just run the playground command**, explain the manual verification steps, and let the human user perform the test queries. If they encounter any errors, they will share the logs/errors back for debugging.
 - **Avoid Command Loops**: If a command or lint check fails repeatedly (more than 3 times), do not run it again. Instead, provide a concise report explaining the issue and the planned fix, then wait for the user to instruct you on how to proceed.
+- **UI Testing Action Limits**: Only ever attempt one type of UI testing action (like clicking coordinates in a subagent) once before stopping. Never loop similar actions without asking the user for input.

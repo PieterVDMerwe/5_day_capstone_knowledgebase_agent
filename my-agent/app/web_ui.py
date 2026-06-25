@@ -1,5 +1,7 @@
 import os
 import re
+import difflib
+import time
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -10,14 +12,71 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel
 
-from .agent import check_prompt_injection, lore_seeker, truth_keeper
-from .database import get_all_entities, get_metadata
-from .parser import scan_and_sync_vault
+from .agent import check_prompt_injection, lore_seeker, truth_keeper, model_name
+from .database import (
+    get_all_entities,
+    get_metadata,
+    get_db_connection,
+    insert_entity,
+    insert_metadata,
+    insert_link
+)
+from .parser import (
+    scan_and_sync_vault,
+    normalize_entity_id,
+    parse_frontmatter,
+    extract_wiki_links
+)
 from .validators import run_all_validators
 
 app = FastAPI(title="Obsidian Lore Companion")
 
 VAULT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Knowledgebase", "Obsidian"))
+
+import json
+from datetime import date
+
+USAGE_FILE = os.path.join(os.path.dirname(__file__), "llm_usage.json")
+
+def get_persisted_usage():
+    today = str(date.today())
+    default_data = {
+        "date": today,
+        "daily_calls": 0,
+        "total_calls": 0,
+        "prompt_tokens": 0,
+        "candidates_tokens": 0,
+        "total_tokens": 0
+    }
+    if os.path.exists(USAGE_FILE):
+        try:
+            with open(USAGE_FILE, "r") as f:
+                data = json.load(f)
+                if data.get("date") == today:
+                    return data
+                else:
+                    data["date"] = today
+                    data["daily_calls"] = 0
+                    return data
+        except Exception:
+            return default_data
+    return default_data
+
+def save_persisted_usage(data):
+    try:
+        with open(USAGE_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+# LLM Token & Rate Limit Usage Tracking
+LLM_USAGE = {
+    "total_calls": 0,
+    "prompt_tokens": 0,
+    "candidates_tokens": 0,
+    "total_tokens": 0,
+    "timestamps": []  # List of timestamps for requests made in the last 60 seconds
+}
 
 # Pydantic schema for requests
 class QueryRequest(BaseModel):
@@ -26,6 +85,7 @@ class QueryRequest(BaseModel):
 class SaveDraftRequest(BaseModel):
     title: str
     content: str
+    diff_only: bool = True
 
 # Sync DB on startup
 @app.on_event("startup")
@@ -55,38 +115,138 @@ def get_entities():
 def get_validation_report():
     return run_all_validators()
 
+@app.get("/api/llm/usage")
+def get_llm_usage():
+    now = time.time()
+    # Filter timestamps to within the last 60 seconds
+    LLM_USAGE["timestamps"] = [t for t in LLM_USAGE["timestamps"] if now - t < 60]
+    
+    rpm_limit = 15  # Default free tier limit is 15 RPM
+    current_rpm = len(LLM_USAGE["timestamps"])
+    
+    usage_data = get_persisted_usage()
+    rpd_limit = 20  # Gemini 2.5 Flash Free Tier daily request limit is 20 RPD
+    
+    return {
+        "model": model_name,
+        "total_calls": usage_data["total_calls"],
+        "prompt_tokens": usage_data["prompt_tokens"],
+        "candidates_tokens": usage_data["candidates_tokens"],
+        "total_tokens": usage_data["total_tokens"],
+        "current_rpm": current_rpm,
+        "rpm_limit": rpm_limit,
+        "rpm_pct": min(100, int((current_rpm / rpm_limit) * 100)),
+        "current_rpd": usage_data["daily_calls"],
+        "rpd_limit": rpd_limit,
+        "rpd_pct": min(100, int((usage_data["daily_calls"] / rpd_limit) * 100))
+    }
+
+@app.get("/api/graph")
+def get_graph_data():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Fetch all nodes (entities)
+    cursor.execute("SELECT id, name, type, summary FROM entities")
+    nodes = [dict(row) for row in cursor.fetchall()]
+    
+    # Fetch all edges (links)
+    cursor.execute("SELECT source_id, target_id, link_type FROM links")
+    edges = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    return {
+        "nodes": nodes,
+        "edges": edges
+    }
 
 session_service = InMemorySessionService()
 
 def run_agent(agent_instance, user_message: str) -> str:
-    session = session_service.create_session_sync(user_id="user", app_name="worldbuilding")
-    runner = Runner(agent=agent_instance, session_service=session_service, app_name="worldbuilding")
+    # Update RPM tracker
+    now = time.time()
+    LLM_USAGE["timestamps"].append(now)
+    LLM_USAGE["total_calls"] += 1
 
-    msg = types.Content(
-        role="user",
-        parts=[types.Part.from_text(text=user_message)]
-    )
+    # Update persisted daily tracker
+    usage_data = get_persisted_usage()
+    usage_data["daily_calls"] += 1
+    usage_data["total_calls"] += 1
 
-    events = list(runner.run(
-        new_message=msg,
-        user_id="user",
-        session_id=session.id,
-        run_config=RunConfig(streaming_mode=StreamingMode.SSE)
-    ))
+    try:
+        session = session_service.create_session_sync(user_id="user", app_name="worldbuilding")
+        runner = Runner(agent=agent_instance, session_service=session_service, app_name="worldbuilding")
 
-    # Try to find the full (non-partial) event first
-    for event in reversed(events):
-        if not event.partial and event.content and event.content.parts:
-            text = "".join(part.text for part in event.content.parts if part.text)
-            if text:
-                return text
+        msg = types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=user_message)]
+        )
 
-    # Fallback to accumulating partials
-    parts_text = []
-    for event in events:
-        if event.partial and event.content and event.content.parts:
-            parts_text.append("".join(part.text for part in event.content.parts if part.text))
-    return "".join(parts_text)
+        events = list(runner.run(
+            new_message=msg,
+            user_id="user",
+            session_id=session.id,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE)
+        ))
+
+        # Accumulate usage tokens from the final response event
+        final_metadata = None
+        for event in reversed(events):
+            if hasattr(event, "usage_metadata") and event.usage_metadata:
+                final_metadata = event.usage_metadata
+                break
+
+        if final_metadata:
+            prompt_tokens = final_metadata.prompt_token_count or 0
+            candidates_tokens = final_metadata.candidates_token_count or 0
+            total_tokens = final_metadata.total_token_count or 0
+
+            LLM_USAGE["prompt_tokens"] += prompt_tokens
+            LLM_USAGE["candidates_tokens"] += candidates_tokens
+            LLM_USAGE["total_tokens"] += total_tokens
+
+            usage_data["prompt_tokens"] += prompt_tokens
+            usage_data["candidates_tokens"] += candidates_tokens
+            usage_data["total_tokens"] += total_tokens
+
+        save_persisted_usage(usage_data)
+
+        # Try to retrieve from the persisted session events first (robust for tool call runs)
+        final_session = session_service.get_session_sync(app_name="worldbuilding", user_id="user", session_id=session.id)
+        if final_session:
+            for event in reversed(final_session.events):
+                if event.author == agent_instance.name and event.content and event.content.parts:
+                    text = "".join(part.text for part in event.content.parts if part.text)
+                    if text.strip():
+                        return text
+
+        # Fallback to the yielded events
+        for event in reversed(events):
+            if not event.partial and event.content and event.content.parts:
+                text = "".join(part.text for part in event.content.parts if part.text)
+                if text.strip():
+                    return text
+
+        # Second fallback: accumulate partials
+        parts_text = []
+        for event in events:
+            if event.partial and event.content and event.content.parts:
+                parts_text.append("".join(part.text for part in event.content.parts if part.text))
+        accumulated = "".join(parts_text)
+        if accumulated.strip():
+            return accumulated
+
+        return "I processed your request, but was unable to formulate a text response. Please try again."
+
+    except Exception as e:
+        err_str = str(e).lower()
+        if "429" in err_str or "resource_exhausted" in err_str or "rate limit" in err_str:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded: You have hit the Gemini API rate limit (429 Resource Exhausted). Please wait a minute before retrying."
+            ) from e
+        raise e
 
 @app.post("/api/lore-seeker/chat")
 async def chat_lore_seeker(req: QueryRequest):
@@ -95,24 +255,170 @@ async def chat_lore_seeker(req: QueryRequest):
     if warning:
         return {"status": "rejected", "message": warning}
 
+    import random
+    funny_messages = [
+        "My crystal ball has gone foggy! A wizard at the local tavern demands 5 silver coins (or a fresh API key) to clear it.",
+        "The magic ley-lines are temporarily depleted. The sprites are taking a union-mandated nap. Try again tomorrow!",
+        "Alas! The scrolls of knowledge have been locked in the High Mage's vault for the night. No more scrying today.",
+        "A mischievous goblin has chewed through the arcane network fibers. The technomancers are currently hunting him down.",
+        "You have summoned me too many times today! My ethereal throat is dry. Fetch me a pint of dwarven ale and ask again on the morrow.",
+        "The ancient spirits are whispering: 'Come back later, we are playing cards.' Let them finish their game.",
+        "Your spell slot is exhausted for the day! Rest at the nearest inn to restore your mana.",
+        "The carrier owls are on strike demanding higher quality field mice. Delivery of lore is suspended until dawn.",
+        "My patron deity has put my divine inspiration on cooldown. Please consult the stars again tomorrow.",
+        "A dragon is currently sleeping on the database. I dare not wake it for more queries until it finishes its nap."
+    ]
+
+    usage_data = get_persisted_usage()
+    if usage_data.get("daily_calls", 0) >= 20:
+        return {"status": "success", "message": random.choice(funny_messages)}
+
     try:
         response_text = run_agent(lore_seeker, req.message)
+        if not response_text or not response_text.strip():
+            return {"status": "success", "message": random.choice(funny_messages)}
         return {"status": "success", "message": response_text}
+    except HTTPException as he:
+        if he.status_code == 429:
+            return {"status": "success", "message": random.choice(funny_messages)}
+        raise he
     except Exception as e:
+        err_str = str(e).lower()
+        if "429" in err_str or "resource_exhausted" in err_str or "rate limit" in err_str:
+            return {"status": "success", "message": random.choice(funny_messages)}
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.post("/api/truth-keeper/validate")
-async def validate_truth_keeper(req: QueryRequest):
+async def validate_truth_keeper(req: SaveDraftRequest):
     # Injection check
-    warning = check_prompt_injection(req.message)
+    warning = check_prompt_injection(req.content)
     if warning:
         return {"status": "rejected", "message": warning}
-
+        
+    entity_id = normalize_entity_id(req.title)
+    
+    # 1. Fetch original state to restore later
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM entities WHERE id = ?", (entity_id,))
+    original_entity = cursor.fetchone()
+    original_entity = dict(original_entity) if original_entity else None
+    
+    cursor.execute("SELECT key, value FROM metadata WHERE entity_id = ?", (entity_id,))
+    original_meta = {row["key"]: row["value"] for row in cursor.fetchall()}
+    
+    cursor.execute("SELECT target_id, link_type FROM links WHERE source_id = ?", (entity_id,))
+    original_links = [(row["target_id"], row["link_type"]) for row in cursor.fetchall()]
+    conn.close()
+    
+    # 2. Parse new draft and temporarily update DB
     try:
-        response_text = run_agent(truth_keeper, f"Verify if the following new lore introduction is consistent with our existing database: {req.message}")
+        meta, body = parse_frontmatter(req.content)
+        links = extract_wiki_links(body)
+        
+        # Build temp entity record
+        entity_type = meta.get("type", "general").strip().lower()
+        summary = meta.get("summary", body.split("\n")[0][:200].strip() if body else "")
+        
+        # Insert draft to DB for static validation
+        insert_entity(entity_id, req.title, entity_type, summary, body, f"Temp/{req.title}.md", 0.0)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM metadata WHERE entity_id = ?", (entity_id,))
+        cursor.execute("DELETE FROM links WHERE source_id = ?", (entity_id,))
+        conn.commit()
+        conn.close()
+        
+        for k, v in meta.items():
+            insert_metadata(entity_id, k, str(v))
+        for link in links:
+            insert_link(entity_id, link)
+            
+        # 3. Run Static Validators
+        static_issues = run_all_validators()
+        # Filter issues belonging to our active draft note
+        draft_issues = [iss for iss in static_issues if iss["entity_id"] == entity_id]
+        
+        if draft_issues:
+            # Restore original DB state
+            restore_db_state(entity_id, original_entity, original_meta, original_links)
+            
+            issues_msg = "Static Validation Warnings Found:\n" + "\n".join(
+                f"- [{iss['type'].upper()}] {iss['message']}" for iss in draft_issues
+            )
+            return {"status": "warning", "message": issues_msg}
+            
+        # 4. Calculate Diff / Full Note Payload
+        if req.diff_only:
+            old_body = original_entity["content"] if original_entity else ""
+            diff = list(difflib.unified_diff(
+                old_body.splitlines(),
+                body.splitlines(),
+                lineterm=""
+            ))
+            
+            # Extract added/changed lines
+            added_lines = [line[1:] for line in diff if line.startswith("+") and not line.startswith("+++")]
+            changed_text = "\n".join(added_lines).strip()
+            
+            # If no changes, return early
+            if not changed_text and original_entity:
+                restore_db_state(entity_id, original_entity, original_meta, original_links)
+                return {"status": "success", "message": "No new changes or additions detected in the draft note."}
+            
+            payload = changed_text if original_entity else body
+            prompt_msg = (
+                f"Review the following new additions to the note '{req.title}':\n\n"
+                f"{payload}\n\n"
+                f"Compare these additions against the existing database facts. Are there any logical contradictions?"
+            )
+        else:
+            payload = body
+            prompt_msg = (
+                f"Review the full content of the note '{req.title}':\n\n"
+                f"{payload}\n\n"
+                f"Compare this note against the existing database facts. Are there any logical contradictions?"
+            )
+            
+        # 5. Call Truth-keeper Agent
+        response_text = run_agent(truth_keeper, prompt_msg)
+        
+        # Restore original DB state
+        restore_db_state(entity_id, original_entity, original_meta, original_links)
         return {"status": "success", "message": response_text}
+        
+    except HTTPException as he:
+        restore_db_state(entity_id, original_entity, original_meta, original_links)
+        raise he
     except Exception as e:
+        restore_db_state(entity_id, original_entity, original_meta, original_links)
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+def restore_db_state(entity_id, original_entity, original_meta, original_links):
+    """Restores the database record of an entity to its original state."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM metadata WHERE entity_id = ?", (entity_id,))
+    cursor.execute("DELETE FROM links WHERE source_id = ?", (entity_id,))
+    cursor.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+    conn.commit()
+    conn.close()
+    
+    if original_entity:
+        insert_entity(
+            original_entity["id"],
+            original_entity["name"],
+            original_entity["type"],
+            original_entity["summary"],
+            original_entity["content"],
+            original_entity["path"],
+            original_entity["last_modified"]
+        )
+        for k, v in original_meta.items():
+            insert_metadata(entity_id, k, v)
+        for target, link_type in original_links:
+            insert_link(entity_id, target, link_type)
 
 @app.post("/api/draft/approve")
 def approve_draft(req: SaveDraftRequest):
@@ -254,6 +560,9 @@ def index_page():
             font-size: 0.75rem;
             color: var(--text-muted);
             margin-top: 4px;
+            word-wrap: break-word;
+            word-break: break-all;
+            white-space: normal;
         }
 
         /* Main workspace area */
@@ -513,6 +822,7 @@ def index_page():
             font-weight: 600;
         }
     </style>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
     <div class="sidebar">
@@ -524,21 +834,53 @@ def index_page():
         <div class="entity-list" id="entities-container">
             <!-- Entities populated dynamically -->
         </div>
-        <div class="entity-meta" id="vault-path-label">
+        <div class="entity-meta" id="vault-path-label" style="margin-bottom: 15px;">
             Loading path...
+        </div>
+        <!-- Quota Meter Widget -->
+        <div class="quota-widget" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 0.85rem; margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
+            <div>
+                <div style="font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                    <span>Gemini API Quota</span>
+                    <span id="quota-rpm-text">0 / 15 RPM</span>
+                </div>
+                <div style="background: #1a1a2e; height: 6px; border-radius: 3px; overflow: hidden;">
+                    <div id="quota-bar" style="background: var(--secondary); width: 0%; height: 100%; transition: width 0.3s;"></div>
+                </div>
+            </div>
+            <div>
+                <div style="font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                    <span>Daily Limit</span>
+                    <span id="quota-rpd-text">0 / 1500 RPD</span>
+                </div>
+                <div style="background: #1a1a2e; height: 6px; border-radius: 3px; overflow: hidden;">
+                    <div id="quota-rpd-bar" style="background: var(--primary); width: 0%; height: 100%; transition: width 0.3s;"></div>
+                </div>
+            </div>
+            <div style="color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: 6px; font-size: 0.75rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Calls: <span id="quota-calls">0</span></span>
+                    <span>Tokens: <span id="quota-tokens">0</span></span>
+                </div>
+                <div style="color: var(--text-muted); font-size: 0.75rem; text-align: left;">
+                    Model: <span id="quota-model" style="color: var(--secondary); font-family: monospace;">Loading...</span>
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="workspace">
         <!-- Tabs Navigation -->
         <div class="tabs-nav">
-            <button class="tab-link active" onclick="switchTab(event, 'tab-workspace')">Workspace</button>
+            <button class="tab-link active" onclick="switchTab(event, 'tab-seeker')">Lore-seeker (Generator)</button>
+            <button class="tab-link" onclick="switchTab(event, 'tab-keeper')">Truth-keeper & Draft Editor</button>
+            <button class="tab-link" onclick="switchTab(event, 'tab-graph'); loadGraph();">Interactive Graph</button>
             <button class="tab-link" onclick="switchTab(event, 'tab-validation')">Validation & Warnings</button>
             <button class="tab-link" onclick="switchTab(event, 'tab-tutorial')">How to Use (Tutorial)</button>
         </div>
 
-        <!-- TAB 1: WORKSPACE -->
-        <div id="tab-workspace" class="tab-content active">
+        <!-- TAB 1: LORE-SEEKER GENERATOR -->
+        <div id="tab-seeker" class="tab-content active">
             <div class="top-stats">
                 <div class="stat-card">
                     <div class="section-title">Total Lore Entities</div>
@@ -565,10 +907,10 @@ def index_page():
                     </div>
                 </div>
 
-                <!-- Draft Editor & Truth-keeper Panel -->
+                <!-- Seeker Draft Editor -->
                 <div class="panel">
                     <div class="panel-header">
-                        <span>Truth-keeper & Draft Editor</span>
+                        <span>Draft Editor</span>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <select id="template-select" style="background: #22223b; border: 1px solid var(--border); color: var(--text-main); border-radius: 8px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; outline: none; cursor: pointer;">
                                 <option value="general">General Note</option>
@@ -578,13 +920,39 @@ def index_page():
                                 <option value="faction">Faction</option>
                             </select>
                             <button class="btn btn-secondary" onclick="createNewNote()" style="padding: 4px 12px; font-size: 0.8rem; background: #22223b; border-color: var(--primary);">New Note</button>
-                            <button class="btn btn-secondary" onclick="approveDraft()" style="padding: 4px 12px; font-size: 0.8rem;">Save & Approve</button>
+                            <button class="btn btn-secondary" onclick="approveDraft('draft-editor-seeker')" style="padding: 4px 12px; font-size: 0.8rem;">Save & Approve</button>
                         </div>
                     </div>
-                    <textarea id="draft-editor" style="flex-grow: 1; height: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; margin-bottom: 15px;" placeholder="Generated Markdown draft content will appear here. Edit it freely."></textarea>
-                    <div class="input-group">
-                        <textarea id="keeper-input" placeholder="Paste draft or describe additions to test consistency..."></textarea>
-                        <button class="btn" style="background: #2b2b3c; border: 1px solid var(--border);" onclick="askTruthKeeper()">Check Conflict</button>
+                    <textarea id="draft-editor-seeker" oninput="syncEditors('draft-editor-seeker', 'draft-editor-keeper')" style="flex-grow: 1; height: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;" placeholder="Generated Markdown draft content will appear here. Edit it freely."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: TRUTH-KEEPER CONSISTENCY -->
+        <div id="tab-keeper" class="tab-content">
+            <div class="main-grid">
+                <!-- Keeper Draft Editor -->
+                <div class="panel" style="height: 600px;">
+                    <div class="panel-header">
+                        <span>Active Note Editor</span>
+                        <button class="btn btn-secondary" onclick="approveDraft('draft-editor-keeper')" style="padding: 4px 12px; font-size: 0.8rem;">Save & Approve</button>
+                    </div>
+                    <textarea id="draft-editor-keeper" oninput="syncEditors('draft-editor-keeper', 'draft-editor-seeker')" style="flex-grow: 1; height: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; margin-bottom: 15px;" placeholder="Active Markdown content. Edit it freely and run conflict checks."></textarea>
+                    <button class="btn" style="background: var(--primary);" onclick="askTruthKeeper()">Check Conflict</button>
+                </div>
+
+                <!-- Truth-keeper Console -->
+                <div class="panel" style="height: 600px;">
+                    <div class="panel-header">
+                        <span>Truth-keeper Conflict Inspector</span>
+                        <div style="display: flex; gap: 8px; align-items: center; font-size: 0.85rem; color: var(--text-muted);">
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                                <input type="checkbox" id="validation-diff-toggle" checked style="cursor: pointer; height: auto; width: auto; margin: 0;"> Changed Bits Only
+                            </label>
+                        </div>
+                    </div>
+                    <div class="chat-output" id="keeper-output" style="height: auto; flex-grow: 1;">
+                        <div class="msg msg-agent">Click "Check Conflict" on the editor to inspect your additions. The system will run fast static validation checks first, then compare changed diff lines with existing database facts to check for semantic contradictions.</div>
                     </div>
                 </div>
             </div>
@@ -600,6 +968,17 @@ def index_page():
                 <div id="validation-container" style="margin-top: 15px;">
                     <div style="color: var(--text-muted); font-size: 0.95rem;">No validation issues reported.</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- TAB: RELATIONSHIP GRAPH -->
+        <div id="tab-graph" class="tab-content">
+            <div class="panel" style="height: calc(100vh - 120px); position: relative;">
+                <div class="panel-header">
+                    <span>Interactive Lore Graph</span>
+                    <button class="sync-btn" onclick="loadGraph()">Reload Graph</button>
+                </div>
+                <div id="lore-graph-container" style="flex-grow: 1; height: 100%; background: #0f0f15; border-radius: 8px;"></div>
             </div>
         </div>
 
@@ -695,6 +1074,8 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
     </div>
 
     <script>
+        let globalEntities = [];
+
         // Load initial data
         window.onload = async () => {
             await loadVaultPath();
@@ -726,10 +1107,47 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
             document.getElementById('stat-path').innerText = data.path;
         }
 
+        async function updateQuotaMeter() {
+            try {
+                const res = await fetch('/api/llm/usage');
+                const data = await res.json();
+                document.getElementById('quota-rpm-text').innerText = `${data.current_rpm} / ${data.rpm_limit} RPM`;
+                document.getElementById('quota-bar').style.width = `${data.rpm_pct}%`;
+                
+                document.getElementById('quota-rpd-text').innerText = `${data.current_rpd} / ${data.rpd_limit} RPD`;
+                document.getElementById('quota-rpd-bar').style.width = `${data.rpd_pct}%`;
+                
+                document.getElementById('quota-calls').innerText = data.total_calls;
+                document.getElementById('quota-tokens').innerText = data.total_tokens;
+                document.getElementById('quota-model').innerText = data.model;
+
+                const bar = document.getElementById('quota-bar');
+                if (data.rpm_pct > 80) {
+                    bar.style.backgroundColor = 'var(--error)';
+                } else if (data.rpm_pct > 50) {
+                    bar.style.backgroundColor = 'var(--warning)';
+                } else {
+                    bar.style.backgroundColor = 'var(--secondary)';
+                }
+
+                const rpdBar = document.getElementById('quota-rpd-bar');
+                if (data.rpd_pct > 80) {
+                    rpdBar.style.backgroundColor = 'var(--error)';
+                } else if (data.rpd_pct > 50) {
+                    rpdBar.style.backgroundColor = 'var(--warning)';
+                } else {
+                    rpdBar.style.backgroundColor = 'var(--primary)';
+                }
+            } catch (e) {
+                console.error("Failed to update quota meter", e);
+            }
+        }
+
         async function refreshData() {
             // Load entities
             const resEnt = await fetch('/api/entities');
             const entities = await resEnt.json();
+            globalEntities = entities;
 
             const container = document.getElementById('entities-container');
             container.innerHTML = '';
@@ -760,9 +1178,28 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
                 issues.forEach(issue => {
                     const item = document.createElement('div');
                     item.className = `issue-item issue-${issue.status}`;
+                    item.style.cursor = 'pointer';
+                    item.title = "Click to edit this note";
+                    item.onclick = () => selectEntityById(issue.entity_id);
                     item.innerHTML = `<strong>${issue.type.toUpperCase()}:</strong> ${issue.message}`;
                     valContainer.appendChild(item);
                 });
+            }
+
+            await updateQuotaMeter();
+        }
+
+        function selectEntityById(entityId) {
+            const ent = globalEntities.find(e => e.id === entityId);
+            if (ent) {
+                loadEntityToEditor(ent);
+                // Switch tab to the keeper/editor tab
+                const keeperTabBtn = Array.from(document.querySelectorAll('.tab-link')).find(btn => btn.innerText.includes('Truth-keeper'));
+                if (keeperTabBtn) {
+                    keeperTabBtn.click();
+                }
+            } else {
+                alert("Could not find the associated note in the database.");
             }
         }
 
@@ -773,34 +1210,42 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
             await refreshData();
         }
 
+        function syncEditors(srcId, destId) {
+            document.getElementById(destId).value = document.getElementById(srcId).value;
+        }
+
         function loadEntityToEditor(ent) {
-            let frontmatter = "---\\n";
-            frontmatter += `name: "${ent.name}"\\n`;
-            frontmatter += `type: "${ent.type}"\\n`;
+            let frontmatter = "---\n";
+            frontmatter += `name: "${ent.name}"\n`;
+            frontmatter += `type: "${ent.type}"\n`;
             for (const [k, v] of Object.entries(ent.metadata)) {
                 if (k !== 'name' && k !== 'type') {
-                    frontmatter += `${k}: ${v}\\n`;
+                    frontmatter += `${k}: ${v}\n`;
                 }
             }
-            frontmatter += "---\\n";
+            frontmatter += "---\n";
 
-            document.getElementById('draft-editor').value = frontmatter + ent.content;
+            const fullContent = frontmatter + ent.content;
+            document.getElementById('draft-editor-seeker').value = fullContent;
+            document.getElementById('draft-editor-keeper').value = fullContent;
         }
+
         function createNewNote() {
             const templateType = document.getElementById('template-select').value;
             let template = "";
             if (templateType === 'character') {
-                template = "---\\nname: \"New Character\"\\ntype: \"character\"\\nspecies: \"human\"\\nsummary: \"\"\\nstatus: \"active\"\\nlocation: \"unknown\"\\nage: \"unknown\"\\nbirth_year: \"unknown\"\\ndeath_year: \"unknown\"\\nfaction: \"unknown\"\\nrelationships:\\n  positive: []\\n  neutral: []\\n  negative: []\\n---\\n\\nProse description here...";
+                template = "---\nname: \"New Character\"\ntype: \"character\"\nspecies: \"human\"\nsummary: \"\"\nstatus: \"active\"\nlocation: \"unknown\"\nage: \"unknown\"\nbirth_year: \"unknown\"\ndeath_year: \"unknown\"\nfaction: \"unknown\"\nrelationships:\n  positive: []\n  neutral: []\n  negative: []\n---\n\nProse description here...";
             } else if (templateType === 'location') {
-                template = "---\\nname: \"New Location\"\\ntype: \"location\"\\nsummary: \"\"\\nregion: \"unknown\"\\nplace_type: \"town\"\\n---\\n\\nProse description here...";
+                template = "---\nname: \"New Location\"\ntype: \"location\"\nsummary: \"\"\nregion: \"unknown\"\nplace_type: \"town\"\n---\n\nProse description here...";
             } else if (templateType === 'item') {
-                template = "---\\nname: \"New Item\"\\ntype: \"item\"\\nsummary: \"\"\\nowner: \"unknown\"\\norigin: \"unknown\"\\nlocation: \"unknown\"\\nrarity: \"common\"\\n---\\n\\nProse description here...";
+                template = "---\nname: \"New Item\"\ntype: \"item\"\nsummary: \"\"\nowner: \"unknown\"\norigin: \"unknown\"\nlocation: \"unknown\"\nrarity: \"common\"\n---\n\nProse description here...";
             } else if (templateType === 'faction') {
-                template = "---\\nname: \"New Faction\"\\ntype: \"faction\"\\nsummary: \"\"\\nheadquarters: \"unknown\"\\nleader: \"unknown\"\\n---\\n\\nProse description here...";
+                template = "---\nname: \"New Faction\"\ntype: \"faction\"\nsummary: \"\"\nheadquarters: \"unknown\"\nleader: \"unknown\"\n---\n\nProse description here...";
             } else {
-                template = "---\\nname: \"New Note\"\\ntype: \"general\"\\nsummary: \"\"\\n---\\n\\nWrite note content here...";
+                template = "---\nname: \"New Note\"\ntype: \"general\"\nsummary: \"\"\n---\n\nWrite note content here...";
             }
-            document.getElementById('draft-editor').value = template;
+            document.getElementById('draft-editor-seeker').value = template;
+            document.getElementById('draft-editor-keeper').value = template;
         }
 
         async function askLoreSeeker() {
@@ -816,40 +1261,153 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: text })
             });
+
+            if (res.status === 429 || res.status === 500) {
+                const errData = await res.json();
+                alert(errData.detail || "An error occurred");
+                appendMsg('seeker-output', 'System Error', errData.detail || "An error occurred");
+                await updateQuotaMeter();
+                return;
+            }
+
             const data = await res.json();
             appendMsg('seeker-output', 'Lore-seeker', data.message);
 
             if (data.message.includes('---')) {
-                document.getElementById('draft-editor').value = data.message;
+                document.getElementById('draft-editor-seeker').value = data.message;
+                document.getElementById('draft-editor-keeper').value = data.message;
             }
+            await updateQuotaMeter();
         }
 
         async function askTruthKeeper() {
-            const inputEl = document.getElementById('keeper-input');
-            const text = inputEl.value.trim();
-            if (!text) return;
+            const content = document.getElementById('draft-editor-keeper').value.trim();
+            if (!content) {
+                alert("Please write or select a note first.");
+                return;
+            }
 
-            appendMsg('seeker-output', 'User (Verification Request)', text);
-            inputEl.value = '';
+            // Simple title extraction
+            const titleMatch = content.match(/name:\s*"(.*?)"/) || content.match(/name:\s*(.*?)\n/);
+            let title = "";
+            if (titleMatch) {
+                title = titleMatch[1].replace(/['"]/g, '').trim();
+            } else {
+                title = prompt("Enter a filename title for this note to run validation:");
+            }
+            if (!title) return;
+
+            const diffOnly = document.getElementById('validation-diff-toggle').checked;
+
+            appendMsg('keeper-output', 'User (Verification Request)', `Checking conflicts for "${title}" (Diff only: ${diffOnly})...`);
 
             const res = await fetch('/api/truth-keeper/validate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
+                body: JSON.stringify({ title, content, diff_only: diffOnly })
             });
+
+            if (res.status === 429 || res.status === 500) {
+                const errData = await res.json();
+                alert(errData.detail || "An error occurred");
+                appendMsg('keeper-output', 'System Error', errData.detail || "An error occurred");
+                await updateQuotaMeter();
+                return;
+            }
+
             const data = await res.json();
-            appendMsg('seeker-output', 'Truth-keeper', data.message);
+            appendMsg('keeper-output', 'Truth-keeper', data.message);
+            await updateQuotaMeter();
         }
 
-        async function approveDraft() {
-            const content = document.getElementById('draft-editor').value;
+        let network = null;
+        async function loadGraph() {
+            const res = await fetch('/api/graph');
+            const data = await res.json();
+            
+            const nodesArray = data.nodes.map(node => {
+                let color = '#8a2be2'; // default character purple
+                if (node.type === 'location') color = '#00ffcc'; // teal
+                else if (node.type === 'item') color = '#ffaa00'; // orange
+                else if (node.type === 'faction') color = '#ff4d4d'; // red
+                
+                return {
+                    id: node.id,
+                    label: node.name,
+                    title: `Type: ${node.type}\nSummary: ${node.summary || 'None'}`,
+                    color: {
+                        background: color,
+                        border: '#28283a',
+                        highlight: { background: color, border: '#fff' }
+                    },
+                    font: { color: '#f5f5f7' },
+                    shape: 'dot',
+                    size: 20
+                };
+            });
+            
+            const seenPairs = new Set();
+            const edgesArray = [];
+            data.edges.forEach(edge => {
+                const u = edge.source_id;
+                const v = edge.target_id;
+                if (u === v) return; // skip self-loops
+                const pairKey = u < v ? `${u}-${v}` : `${v}-${u}`;
+                if (!seenPairs.has(pairKey)) {
+                    seenPairs.add(pairKey);
+                    edgesArray.push({
+                        from: u,
+                        to: v,
+                        label: edge.link_type !== 'wiki' ? edge.link_type : '',
+                        arrows: 'to',
+                        color: { color: '#28283a', highlight: '#8a2be2' },
+                        font: { color: '#8e8e9f', size: 10, align: 'top' }
+                    });
+                }
+            });
+            
+            const container = document.getElementById('lore-graph-container');
+            const graphData = {
+                nodes: new vis.DataSet(nodesArray),
+                edges: new vis.DataSet(edgesArray)
+            };
+            
+            const options = {
+                physics: {
+                    stabilization: true,
+                    barnesHut: {
+                        gravitationalConstant: -4000,
+                        centralGravity: 0.15,
+                        springLength: 180
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200
+                }
+            };
+            
+            if (network) network.destroy();
+            network = new vis.Network(container, graphData, options);
+            
+            // Double-click a node to load it into the editor and switch to the editor tab
+            network.on("doubleClick", function (params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    selectEntityById(nodeId);
+                }
+            });
+        }
+
+        async function approveDraft(editorId) {
+            const content = document.getElementById(editorId).value;
             if (!content) {
                 alert("Draft editor is empty.");
                 return;
             }
 
             // Simple title extraction
-            const titleMatch = content.match(/name:\s*"(.*?)"/) || content.match(/name:\s*(.*?)\\n/);
+            const titleMatch = content.match(/name:\s*"(.*?)"/) || content.match(/name:\s*(.*?)\n/);
             let title = "";
             if (titleMatch) {
                 title = titleMatch[1].replace(/['"]/g, '').trim();

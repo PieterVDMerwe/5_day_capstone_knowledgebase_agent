@@ -1,17 +1,38 @@
 {
   "eval_cases": [
     {
-      "eval_case_id": "greeting",
+      "eval_case_id": "greeting_role",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "Hello, what can you help me with?"}]
+        "parts": [{"text": "Hello! What is your role as the Lore-seeker and how can you help me build my wiki?"}]
       }
     },
     {
-      "eval_case_id": "weather_query",
+      "eval_case_id": "generate_character_wizard",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "What's the weather like in San Francisco?"}]
+        "parts": [{"text": "I want to create a new character named 'Alastair the Red', a human wizard who is 90 years old, born in era year 1200, currently active, and lives in Oakhaven Town. Please generate a draft note following the Character schema."}]
+      }
+    },
+    {
+      "eval_case_id": "conflict_check_logic",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "If a character was born in the year 1250 and recorded as deceased, but their death year is listed as 1240, what kind of logical conflict is that?"}]
+      }
+    },
+    {
+      "eval_case_id": "generate_location_tavern",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Generate a new Location note draft for a tavern named 'The Sleeping Dragon' situated in the Great Oak Forest region."}]
+      }
+    },
+    {
+      "eval_case_id": "query_oakhaven_lore",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Can you check the database using your tools and tell me what existing facts we have recorded about 'Oakhaven Town'?"}]
       }
     }
   ]

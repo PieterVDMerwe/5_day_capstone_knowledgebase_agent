@@ -83,3 +83,77 @@ def test_fantasy_lifespans_and_item_schema():
     
     assert len(human_warnings) > 0
     assert len(elf_warnings) == 0
+
+def test_unrecognized_entity_type_and_negative_age():
+    init_db()
+    clear_db()
+
+    # 1. Unrecognized type
+    insert_entity("unknown_type", "Mysterious Orb", "relic", "An ancient relic", "Glowing orb.", "relic.md", 0.0)
+
+    # 2. Negative age
+    insert_entity("young_dwarf", "Gimli", "character", "Dwarf warrior", "Axeman.", "dwarf.md", 0.0)
+    insert_metadata("young_dwarf", "status", "active")
+    insert_metadata("young_dwarf", "location", "unknown")
+    insert_metadata("young_dwarf", "age", "-5")
+
+    issues = run_all_validators()
+    issue_msgs = [iss["message"] for iss in issues]
+    
+    assert any("has unrecognized type 'relic'" in msg for msg in issue_msgs)
+    assert any("has negative age value: -5" in msg for msg in issue_msgs)
+
+def test_cross_references_validation():
+    init_db()
+    clear_db()
+
+    # Character referencing missing location and faction
+    insert_entity("bilbo", "Bilbo", "character", "Hobbit", "Adventurer.", "bilbo.md", 0.0)
+    insert_metadata("bilbo", "status", "active")
+    insert_metadata("bilbo", "age", "111")
+    insert_metadata("bilbo", "location", "The Shire") # Missing Location note
+    insert_metadata("bilbo", "faction", "Fellowship") # Missing Faction note
+
+    # Faction referencing missing headquarters and leader
+    insert_entity("guild", "Guild of Crafters", "faction", "Craft guild", "Builders.", "guild.md", 0.0)
+    insert_metadata("guild", "headquarters", "Oakhaven Town") # Missing Location note
+    insert_metadata("guild", "leader", "Liam the Blacksmith") # Missing Character note
+
+    issues = run_all_validators()
+    issue_msgs = [iss["message"] for iss in issues]
+
+    assert any("references location 'The Shire', but that Location note does not exist." in msg for msg in issue_msgs)
+    assert any("references faction 'Fellowship', but that Faction note does not exist." in msg for msg in issue_msgs)
+    assert any("headquarters 'Oakhaven Town' does not exist as a Location note." in msg for msg in issue_msgs)
+    assert any("leader 'Liam the Blacksmith' does not exist as a Character note." in msg for msg in issue_msgs)
+
+def test_fuzzy_name_duplicates():
+    init_db()
+    clear_db()
+
+    # Add two characters with highly similar names (typo scenario)
+    insert_entity("eldrin_wise", "Eldrin the Wise", "character", "Wizard", "An old wizard.", "eldrin.md", 0.0)
+    insert_entity("eldren_wise", "Eldren the Wise", "character", "Wizard typo", "An old wizard.", "eldren.md", 0.0)
+
+    issues = run_all_validators()
+    issue_types = {iss["type"] for iss in issues}
+    assert "duplicate_name" in issue_types
+
+def test_name_generator():
+    from app.agent import generate_random_name
+    
+    char_names = generate_random_name("character", "elf")
+    assert "Generated Character Names:" in char_names
+    assert len(char_names.split(",")) == 5
+
+    loc_names = generate_random_name("location", "dark")
+    assert "Generated Location Names:" in loc_names
+
+    item_names = generate_random_name("item")
+    assert "Generated Item Names:" in item_names
+
+    faction_names = generate_random_name("faction")
+    assert "Generated Faction Names:" in faction_names
+
+    error_msg = generate_random_name("invalid_type")
+    assert "Error: Unknown entity_type" in error_msg

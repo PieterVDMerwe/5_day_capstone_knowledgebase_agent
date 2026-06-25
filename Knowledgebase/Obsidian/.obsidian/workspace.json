@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Sandra Liam.md",
+                "file": "Garrett the Woodsman.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Sandra Liam"
+              "title": "Garrett the Woodsman"
             }
           }
         ]
@@ -183,13 +183,13 @@
   },
   "active": "38190ff0a37cf2a7",
   "lastOpenFiles": [
-    "Sandra.md",
-    "Sandra Liam.md",
-    "Maeve the Barkeep.md",
     "Liam the Blacksmith.md",
-    "Garrett the Woodsman.md",
+    "Maeve the Barkeep.md",
     "Oakhaven Town.md",
+    "Sandra Liam.md",
     "The Rusty Anvil Tavern.md",
+    "Garrett the Woodsman.md",
+    "Sandra.md",
     "Untitled",
     "Initial.md",
     "secondary file.md"

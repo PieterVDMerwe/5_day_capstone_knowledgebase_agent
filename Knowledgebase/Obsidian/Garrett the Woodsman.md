@@ -1,9 +1,10 @@
 ---
 name: "Garrett the Woodsman"
 type: "character"
-summary: "A weathered tracker and hunter who lives on the fringes of Oakhaven Town."
-status: "active"
-location: "Oakhaven Town"
+location: Oakhaven Town
+status: active
+summary: A weathered tracker and hunter who lives on the fringes of Oakhaven Town.
+age: 20
 ---
 
 Garrett is a weathered tracker and hunter who has lived on the wild fringes of [[Oakhaven Town]] for most of his life. He knows every game trail, hidden hollow, and dangerous beast lurking in the surrounding woodland, making him the town's most trusted guide.

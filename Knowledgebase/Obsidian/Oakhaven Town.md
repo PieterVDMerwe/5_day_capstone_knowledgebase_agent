@@ -1,8 +1,9 @@
 ---
 name: "Oakhaven Town"
 type: "location"
-summary: "A peaceful, rustic settlement nestled deep within the Great Oak Forest."
-region: "Great Oak Forest"
+region: Great Oak Forest
+summary: A peaceful, rustic settlement nestled deep within the Great Oak Forest.
+place_type: "town"
 ---
 
 Oakhaven is a peaceful, rustic settlement nestled deep within the whispering canopy of the Great Oak Forest. At the heart of the community stands [[The Rusty Anvil Tavern]], where locals gather to share tales, while travelers often seek out the expertise of [[Garrett the Woodsman]] for guiding them through the surrounding wilderness.

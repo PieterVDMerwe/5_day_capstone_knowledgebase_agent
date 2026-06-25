@@ -1,9 +1,10 @@
 ---
 name: "Maeve the Barkeep"
 type: "character"
-summary: "The sharp-tongued, quick-witted owner of The Rusty Anvil Tavern."
-status: "active"
-location: "Oakhaven Town"
+location: Oakhaven Town
+status: active
+summary: The sharp-tongued, quick-witted owner of The Rusty Anvil Tavern.
+age: 35
 ---
 
 Maeve is the sharp-tongued, quick-witted owner of [[The Rusty Anvil Tavern]], whose family has kept the hearth burning for generations. She welcomes every guest with a generous pour and a shrewd eye, ensuring that her establishment remains a safe haven for all who enter [[Oakhaven Town]].

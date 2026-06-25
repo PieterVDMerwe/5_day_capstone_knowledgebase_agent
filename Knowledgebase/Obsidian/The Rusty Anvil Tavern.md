@@ -1,8 +1,9 @@
 ---
 name: "The Rusty Anvil Tavern"
 type: "location"
-summary: "The bustling tavern at the heart of Oakhaven Town."
-region: "Oakhaven Town"
+region: Oakhaven Town
+summary: The bustling tavern at the heart of Oakhaven Town.
+place_type: "Tavern"
 ---
 
 The Rusty Anvil is the bustling heart of [[Oakhaven Town]], renowned for its roaring central hearth and hearty pints of blackberry mead. The tavern is run by [[Maeve the Barkeep]], whose warm hospitality is matched only by her knack for collecting every rumor that passes through the valley.
