@@ -1,0 +1,3 @@
+Garrett is a weathered tracker and hunter who has lived on the wild fringes of [[Oakhaven Town]] for most of his life. He knows every game trail, hidden hollow, and dangerous beast lurking in the surrounding woodland, making him the town's most trusted guide.
+
+Though he prefers the quiet of the woods, Garrett frequently stops by [[The Rusty Anvil Tavern]] to trade pelts and share warnings about shifting dangers in the forest. He is a man of few words, but his insights are invaluable to anyone planning to journey beyond the town's borders.
