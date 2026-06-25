@@ -32,11 +32,11 @@ def test_static_validators_mocked():
     clear_db()
 
     # Insert dummy location
-    insert_entity("oakhaven_town", "Oakhaven Town", "location", "A quiet town", "Oakhaven is peaceful.", "test_path.md")
+    insert_entity("oakhaven_town", "Oakhaven Town", "location", "A quiet town", "Oakhaven is peaceful.", "test_path.md", 0.0)
     insert_metadata("oakhaven_town", "region", "The Wildlands")
 
     # Insert character with timeline error (death before birth)
-    insert_entity("bad_character", "Bad Character", "character", "A broken timeline", "He was a legend.", "test_path2.md")
+    insert_entity("bad_character", "Bad Character", "character", "A broken timeline", "He was a legend.", "test_path2.md", 0.0)
     insert_metadata("bad_character", "birth_year", "1250")
     insert_metadata("bad_character", "death_year", "1240") # Chronological error
     insert_metadata("bad_character", "status", "deceased")
