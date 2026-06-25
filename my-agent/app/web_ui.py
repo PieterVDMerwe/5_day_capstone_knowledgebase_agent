@@ -569,7 +569,14 @@ def index_page():
                 <div class="panel">
                     <div class="panel-header">
                         <span>Truth-keeper & Draft Editor</span>
-                        <div style="display: flex; gap: 8px;">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <select id="template-select" style="background: #22223b; border: 1px solid var(--border); color: var(--text-main); border-radius: 8px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; outline: none; cursor: pointer;">
+                                <option value="general">General Note</option>
+                                <option value="character">Character</option>
+                                <option value="location">Location</option>
+                                <option value="item">Item</option>
+                                <option value="faction">Faction</option>
+                            </select>
                             <button class="btn btn-secondary" onclick="createNewNote()" style="padding: 4px 12px; font-size: 0.8rem; background: #22223b; border-color: var(--primary);">New Note</button>
                             <button class="btn btn-secondary" onclick="approveDraft()" style="padding: 4px 12px; font-size: 0.8rem;">Save & Approve</button>
                         </div>
@@ -618,16 +625,61 @@ name: "Locations/The Rusty Anvil"       => Saves to: [Vault Path]/Locations/The 
                 </div>
 
                 <h3>Formatting Templates</h3>
-                <p>To enable deterministic validation, ensure your notes contain clean YAML frontmatter. The parser automatically structures this on save:</p>
+                <p>To enable deterministic validation, ensure your notes contain clean YAML frontmatter. Select a template using the dropdown in the workspace tab, or use the formats below:</p>
+                
+                <h4>Character Schema</h4>
                 <div class="code-block">
 ---
-name: "Liam the Blacksmith"
+name: "Eldrin the Wise"
 type: "character"
-summary: "A blacksmith working in Oakhaven Town."
-status: "active"
-location: "Oakhaven Town"
-birth_year: "1200"
-death_year: "1280"
+species: "human" # human | elf | dwarf | unknown | etc. (determines lifespan limit)
+summary: "An old wizard."
+status: "active" # active | deceased | unknown
+location: "Oakhaven Town" # Must link to Location note, or "unknown"
+age: "82" # Integer age or "unknown"
+birth_year: "1210" # Optional (supports fantasy eras, e.g. 4E 201)
+death_year: "unknown" # Optional (use unknown if still alive)
+faction: "Mages Guild" # Optional - Must link to Faction, or "unknown"
+relationships:
+  positive:
+    - "[[Maeve the Barkeep]] (friend)" # Wiki link with optional qualifier
+  neutral: []
+  negative: []
+---
+                </div>
+
+                <h4>Location Schema</h4>
+                <div class="code-block">
+---
+name: "Oakhaven Town"
+type: "location"
+summary: "A peaceful, rustic settlement."
+region: "Great Oak Forest" # Region name or "unknown"
+place_type: "town" # town | tavern | landmark | dungeon | etc.
+---
+                </div>
+
+                <h4>Item Schema</h4>
+                <div class="code-block">
+---
+name: "Sunfire Staff"
+type: "item"
+summary: "A golden staff emitting solar rays."
+owner: "Eldrin the Wise" # Optional Character link, or "unknown"
+origin: "Great Oak Forest" # Optional Location link, or "unknown"
+location: "unknown" # Current Location link, or "unknown"
+rarity: "legendary" # common | rare | legendary | unique
+---
+                </div>
+
+                <h4>Faction Schema</h4>
+                <div class="code-block">
+---
+name: "Mages Guild"
+type: "faction"
+summary: "An organization of arcane practitioners."
+headquarters: "Oakhaven Town" # Location link, or "unknown"
+leader: "Eldrin the Wise" # Character link, or "unknown"
 ---
                 </div>
 
@@ -735,7 +787,19 @@ death_year: "1280"
             document.getElementById('draft-editor').value = frontmatter + ent.content;
         }
         function createNewNote() {
-            const template = "---\\nname: \"New Note\"\\ntype: \"general\"\\nsummary: \"\"\\n---\\n\\nWrite your note content here...";
+            const templateType = document.getElementById('template-select').value;
+            let template = "";
+            if (templateType === 'character') {
+                template = "---\\nname: \"New Character\"\\ntype: \"character\"\\nspecies: \"human\"\\nsummary: \"\"\\nstatus: \"active\"\\nlocation: \"unknown\"\\nage: \"unknown\"\\nbirth_year: \"unknown\"\\ndeath_year: \"unknown\"\\nfaction: \"unknown\"\\nrelationships:\\n  positive: []\\n  neutral: []\\n  negative: []\\n---\\n\\nProse description here...";
+            } else if (templateType === 'location') {
+                template = "---\\nname: \"New Location\"\\ntype: \"location\"\\nsummary: \"\"\\nregion: \"unknown\"\\nplace_type: \"town\"\\n---\\n\\nProse description here...";
+            } else if (templateType === 'item') {
+                template = "---\\nname: \"New Item\"\\ntype: \"item\"\\nsummary: \"\"\\nowner: \"unknown\"\\norigin: \"unknown\"\\nlocation: \"unknown\"\\nrarity: \"common\"\\n---\\n\\nProse description here...";
+            } else if (templateType === 'faction') {
+                template = "---\\nname: \"New Faction\"\\ntype: \"faction\"\\nsummary: \"\"\\nheadquarters: \"unknown\"\\nleader: \"unknown\"\\n---\\n\\nProse description here...";
+            } else {
+                template = "---\\nname: \"New Note\"\\ntype: \"general\"\\nsummary: \"\"\\n---\\n\\nWrite note content here...";
+            }
             document.getElementById('draft-editor').value = template;
         }
 
