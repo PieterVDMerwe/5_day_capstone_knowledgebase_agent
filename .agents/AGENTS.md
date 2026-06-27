@@ -19,3 +19,10 @@ Wait for user input at each ✋ pause before continuing.
 - **Just run the playground command**, explain the manual verification steps, and let the human user perform the test queries. If they encounter any errors, they will share the logs/errors back for debugging.
 - **Avoid Command Loops**: If a command or lint check fails repeatedly (more than 3 times), do not run it again. Instead, provide a concise report explaining the issue and the planned fix, then wait for the user to instruct you on how to proceed.
 - **UI Testing Action Limits**: Only ever attempt one type of UI testing action (like clicking coordinates in a subagent) once before stopping. Never loop similar actions without asking the user for input.
+
+## Handoff Onboarding Rule
+When you are spawned into this workspace to pick up a task, you MUST do the following before writing any code:
+1. Check the project root for a `HANDOFF.md` file. If it exists, read it using `view_file` to understand the current phase and what was completed by the previous agent.
+2. Read the `implementation_plan.md` artifact (if present in the `.gemini/antigravity-ide/brain` directory) to understand the overarching architectural rules and constraints.
+3. Strictly follow the "Documentation & Handoff Standards" defined in the implementation plan (Type Hinting, Docstrings).
+4. When you complete your designated phase or task, you MUST update the `HANDOFF.md` file to summarize what you built, how it works, and what the next phase requires.

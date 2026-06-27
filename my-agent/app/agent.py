@@ -195,6 +195,10 @@ model_instance = Gemini(
     retry_options=types.HttpRetryOptions(attempts=3),
 )
 
+# Instantiate google-genai client directly for custom tool calls
+from google import genai
+genai_client = genai.Client()
+
 # Create sub-skill tools
 def format_note_draft(draft_content: str) -> str:
     """Format raw lore drafts into clean Markdown notes with correct YAML frontmatter according to Character, Location, Item, or Faction schemas. Do not access the database or write new creative lore yourself.
@@ -202,7 +206,7 @@ def format_note_draft(draft_content: str) -> str:
     Args:
         draft_content: The raw unstructured text draft of the note.
     """
-    response = model_instance.client.models.generate_content(
+    response = genai_client.models.generate_content(
         model=model_name,
         contents=f"Format the following raw draft into clean Markdown note format with correct YAML frontmatter according to Character, Location, Item, or Faction schemas:\n\n{draft_content}"
     )
@@ -215,7 +219,7 @@ def analyze_contradictions(proposed_change: str) -> str:
         proposed_change: The proposed note text or modifications to check.
     """
     report = get_static_validation_report()
-    response = model_instance.client.models.generate_content(
+    response = genai_client.models.generate_content(
         model=model_name,
         contents=f"Verify if this proposed change has logical, chronological, or geographic contradictions with current facts.\nStatic validation report:\n{report}\nProposed change:\n{proposed_change}"
     )
@@ -229,7 +233,13 @@ truth_keeper = Agent(
     If needed, delegate detailed contradiction analysis to your analyze_contradictions tool.
     Only raise conflicts or reject changes if there is a logical or semantic contradiction with the existing lore (e.g. a character is alive in a location where they are recorded as dead, or timeline conflicts).
     Additionally, you must verify that the name of any new or renamed entity is unique enough compared to existing entities. Query the database to retrieve existing names, and flag a conflict or warning if the proposed name is identical or too similar (e.g. fuzzy spelling variations or typo duplicates) to an existing entity's name.
-    Be objective, precise, and state clear reasons when conflicts arise.""",
+    Be objective, precise, and state clear reasons when conflicts arise.
+
+    Database Schema details for query_db:
+    - Table `entities`: id (TEXT, PK, normalized name e.g. "oakhaven_town"), name (TEXT), type (TEXT e.g. "character", "location", "item", "faction"), summary (TEXT), content (TEXT), path (TEXT), last_modified (REAL)
+    - Table `metadata`: entity_id (TEXT, FK), key (TEXT e.g. "status", "age", "species", "location", "birth_year", "death_year", "region", "place_type", "owner", "origin", "rarity", "headquarters", "leader"), value (TEXT)
+    - Table `links`: source_id (TEXT, FK), target_id (TEXT, PK/FK), link_type (TEXT)
+    Do NOT query tables like 'characters', 'locations', etc. All notes are in the `entities` table.""",
     tools=[query_db, get_static_validation_report, get_entity_details, analyze_contradictions],
 )
 
@@ -249,7 +259,13 @@ lore_seeker = Agent(
     3. Item: fields (name, type: "item", summary, owner, origin, location, rarity)
     4. Faction: fields (name, type: "faction", summary, headquarters, leader)
     
-    Allow "unknown" for optional values like ages, locations, or leaders, and support fantasy eras/species context.""",
+    Allow "unknown" for optional values like ages, locations, or leaders, and support fantasy eras/species context.
+
+    Database Schema details for query_db:
+    - Table `entities`: id (TEXT, PK, normalized name e.g. "oakhaven_town"), name (TEXT), type (TEXT e.g. "character", "location", "item", "faction"), summary (TEXT), content (TEXT), path (TEXT), last_modified (REAL)
+    - Table `metadata`: entity_id (TEXT, FK), key (TEXT e.g. "status", "age", "species", "location", "birth_year", "death_year", "region", "place_type", "owner", "origin", "rarity", "headquarters", "leader"), value (TEXT)
+    - Table `links`: source_id (TEXT, FK), target_id (TEXT, PK/FK), link_type (TEXT)
+    Do NOT query tables like 'characters', 'locations', etc. All notes are in the `entities` table.""",
     tools=[query_db, get_entity_details, generate_random_name, format_note_draft],
 )
 

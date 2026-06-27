@@ -2,6 +2,7 @@ import os
 import re
 import difflib
 import time
+from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -28,10 +29,17 @@ from .parser import (
     extract_wiki_links
 )
 from .validators import run_all_validators
+from .app_utils.mcp_client import StdioMCPClient
 
 app = FastAPI(title="Obsidian Lore Companion")
 
 VAULT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Knowledgebase", "Obsidian"))
+
+# Initialize StdioMCPClient if configured in .env
+OLLAMA_MCP_DIR = os.environ.get("OLLAMA_MCP_DIR")
+mcp_client = StdioMCPClient(OLLAMA_MCP_DIR) if OLLAMA_MCP_DIR else None
+active_ollama_model = None
+active_backend = "gemini"  # "gemini" or "ollama"
 
 import json
 from datetime import date
@@ -91,10 +99,93 @@ class SaveDraftRequest(BaseModel):
 @app.on_event("startup")
 def startup_event():
     scan_and_sync_vault(VAULT_PATH)
+    if mcp_client:
+        try:
+            mcp_client.start()
+        except Exception as e:
+            print(f"Warning: Failed to start Ollama MCP Client: {e}")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    if mcp_client:
+        global active_ollama_model
+        if active_ollama_model:
+            try:
+                mcp_client.call_tool("stop_model", {"model_name": active_ollama_model})
+            except Exception:
+                pass
+        mcp_client.stop()
 
 @app.get("/api/vault-path")
 def get_vault_path():
     return {"path": VAULT_PATH}
+
+@app.get("/api/ollama/models")
+def get_ollama_models():
+    if not mcp_client:
+        return {"models": []}
+    try:
+        res = mcp_client.call_tool("list_local_models", {})
+        structured = res.get("structuredContent", {})
+        models = structured.get("result", [])
+        return {"models": models}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list local models: {e}")
+
+class SelectBackendModelRequest(BaseModel):
+    backend: str
+    model: Optional[str] = None
+
+@app.post("/api/backend/select")
+def select_backend_model(req: SelectBackendModelRequest):
+    global active_backend, active_ollama_model
+    if req.backend not in ("gemini", "ollama"):
+        raise HTTPException(status_code=400, detail="Invalid backend. Must be 'gemini' or 'ollama'")
+    active_backend = req.backend
+    if req.backend == "ollama":
+        if not req.model:
+            raise HTTPException(status_code=400, detail="Model name is required for Ollama backend")
+        active_ollama_model = req.model
+    return {"status": "success", "backend": active_backend, "model": active_ollama_model}
+
+@app.post("/api/ollama/unload")
+def unload_ollama_model():
+    global active_ollama_model
+    if not mcp_client:
+        raise HTTPException(status_code=500, detail="Ollama MCP Client not configured")
+    if not active_ollama_model:
+        return {"status": "success", "message": "No model was loaded"}
+    try:
+        mcp_client.call_tool("stop_model", {"model_name": active_ollama_model})
+        msg = f"Model '{active_ollama_model}' successfully unloaded."
+        active_ollama_model = None
+        return {"status": "success", "message": msg}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unload model: {e}")
+
+
+def run_local_agent(system_instruction: str, user_message: str) -> str:
+    if not mcp_client:
+        raise HTTPException(status_code=500, detail="Ollama MCP Client not configured. Check OLLAMA_MCP_DIR in .env.")
+    
+    global active_ollama_model
+    if not active_ollama_model:
+        raise HTTPException(status_code=400, detail="No active Ollama model selected.")
+    
+    full_prompt = f"System Instruction:\n{system_instruction}\n\nUser request:\n{user_message}"
+    
+    try:
+        res = mcp_client.call_tool("run_model_completion", {
+            "model_name": active_ollama_model,
+            "prompt": full_prompt
+        })
+        content = res.get("content", [])
+        if content and isinstance(content, list):
+            text = content[0].get("text", "")
+            return text
+        return str(res)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ollama execution error: {e}")
 
 @app.post("/api/sync")
 def sync_vault():
@@ -127,8 +218,10 @@ def get_llm_usage():
     usage_data = get_persisted_usage()
     rpd_limit = 20  # Gemini 2.5 Flash Free Tier daily request limit is 20 RPD
     
+    active_m = active_ollama_model if active_backend == "ollama" else model_name
+    
     return {
-        "model": model_name,
+        "model": active_m if active_m else "None Selected",
         "total_calls": usage_data["total_calls"],
         "prompt_tokens": usage_data["prompt_tokens"],
         "candidates_tokens": usage_data["candidates_tokens"],
@@ -248,6 +341,12 @@ def run_agent(agent_instance, user_message: str) -> str:
             ) from e
         raise e
 
+def clean_markdown_code_blocks(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r"^```[a-zA-Z]*\r?\n", "", text)
+    text = re.sub(r"\r?\n```$", "", text)
+    return text.strip()
+
 @app.post("/api/lore-seeker/chat")
 async def chat_lore_seeker(req: QueryRequest):
     # Injection check
@@ -274,9 +373,21 @@ async def chat_lore_seeker(req: QueryRequest):
         return {"status": "success", "message": random.choice(funny_messages)}
 
     try:
-        response_text = run_agent(lore_seeker, req.message)
+        if active_backend == "ollama":
+            # Track call
+            LLM_USAGE["total_calls"] += 1
+            usage_data = get_persisted_usage()
+            usage_data["total_calls"] += 1
+            save_persisted_usage(usage_data)
+            
+            response_text = run_local_agent(lore_seeker.instruction, req.message)
+        else:
+            response_text = run_agent(lore_seeker, req.message)
         if not response_text or not response_text.strip():
             return {"status": "success", "message": random.choice(funny_messages)}
+            
+        # Clean markdown code blocks from the generated note draft
+        response_text = clean_markdown_code_blocks(response_text)
         return {"status": "success", "message": response_text}
     except HTTPException as he:
         if he.status_code == 429:
@@ -381,8 +492,17 @@ async def validate_truth_keeper(req: SaveDraftRequest):
                 f"Compare this note against the existing database facts. Are there any logical contradictions?"
             )
             
-        # 5. Call Truth-keeper Agent
-        response_text = run_agent(truth_keeper, prompt_msg)
+        # 5. Call Truth-keeper Agent or Local Ollama
+        if active_backend == "ollama":
+            # Track call
+            LLM_USAGE["total_calls"] += 1
+            usage_data = get_persisted_usage()
+            usage_data["total_calls"] += 1
+            save_persisted_usage(usage_data)
+            
+            response_text = run_local_agent(truth_keeper.instruction, prompt_msg)
+        else:
+            response_text = run_agent(truth_keeper, prompt_msg)
         
         # Restore original DB state
         restore_db_state(entity_id, original_entity, original_meta, original_links)
@@ -837,6 +957,21 @@ def index_page():
         <div class="entity-meta" id="vault-path-label" style="margin-bottom: 15px;">
             Loading path...
         </div>
+        <!-- Backend and Model Selector -->
+        <div class="backend-selector-widget" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 0.85rem; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-weight: 600; color: var(--secondary);">Model Backend</div>
+            <select id="backend-select" onchange="toggleBackend()" style="background: #1a1a2e; border: 1px solid var(--border); color: var(--text-main); border-radius: 6px; padding: 6px; font-family: inherit; font-size: 0.8rem; outline: none; cursor: pointer; width: 100%;">
+                <option value="gemini">Gemini 2.5 (Cloud)</option>
+                <option value="ollama">Ollama (Local MCP)</option>
+            </select>
+            <div id="ollama-model-container" style="display: none; flex-direction: column; gap: 6px; margin-top: 4px;">
+                <div style="font-weight: 600; color: var(--text-muted); font-size: 0.75rem;">Local Ollama Model</div>
+                <select id="ollama-model-select" onchange="selectOllamaModel()" style="background: #1a1a2e; border: 1px solid var(--border); color: var(--text-main); border-radius: 6px; padding: 6px; font-family: inherit; font-size: 0.8rem; outline: none; cursor: pointer; width: 100%;">
+                    <!-- Populated dynamically -->
+                </select>
+                <button class="sync-btn" onclick="unloadOllamaModel()" style="width: 100%; border-color: var(--error); color: var(--error); margin-top: 4px;">Unload Model VRAM</button>
+            </div>
+        </div>
         <!-- Quota Meter Widget -->
         <div class="quota-widget" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 0.85rem; margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
             <div>
@@ -1075,12 +1210,73 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
 
     <script>
         let globalEntities = [];
+        let localModels = [];
 
         // Load initial data
         window.onload = async () => {
             await loadVaultPath();
             await refreshData();
+            await loadOllamaModels();
         };
+
+        async function loadOllamaModels() {
+            try {
+                const res = await fetch('/api/ollama/models');
+                const data = await res.json();
+                localModels = data.models || [];
+                const select = document.getElementById('ollama-model-select');
+                select.innerHTML = '';
+                localModels.forEach(model => {
+                    const opt = document.createElement('option');
+                    opt.value = model.name;
+                    opt.innerText = `${model.name} (${model.parameter_size})`;
+                    select.appendChild(opt);
+                });
+                
+                if (localModels.length > 0) {
+                    await selectOllamaModel();
+                }
+            } catch (e) {
+                console.error("Failed to load Ollama models", e);
+            }
+        }
+
+        async function toggleBackend() {
+            const backend = document.getElementById('backend-select').value;
+            const container = document.getElementById('ollama-model-container');
+            if (backend === 'ollama') {
+                container.style.display = 'flex';
+                await selectOllamaModel();
+            } else {
+                container.style.display = 'none';
+                await fetch('/api/backend/select', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ backend: 'gemini' })
+                });
+            }
+            await updateQuotaMeter();
+        }
+
+        async function selectOllamaModel() {
+            const backend = document.getElementById('backend-select').value;
+            const model = document.getElementById('ollama-model-select').value;
+            if (!model) return;
+            
+            await fetch('/api/backend/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ backend, model })
+            });
+            await updateQuotaMeter();
+        }
+
+        async function unloadOllamaModel() {
+            const res = await fetch('/api/ollama/unload', { method: 'POST' });
+            const data = await res.json();
+            alert(data.message);
+            await updateQuotaMeter();
+        }
 
         function switchTab(evt, tabId) {
             // Hide all tab contents
@@ -1327,22 +1523,32 @@ leader: "Eldrin the Wise" # Character link, or "unknown"
             
             const nodesArray = data.nodes.map(node => {
                 let color = '#8a2be2'; // default character purple
-                if (node.type === 'location') color = '#00ffcc'; // teal
-                else if (node.type === 'item') color = '#ffaa00'; // orange
-                else if (node.type === 'faction') color = '#ff4d4d'; // red
+                let svg = '';
+                if (node.type === 'location') {
+                    color = '#00ffcc'; // teal
+                    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+                } else if (node.type === 'item') {
+                    color = '#ffaa00'; // orange
+                    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>`;
+                } else if (node.type === 'faction') {
+                    color = '#ff4d4d'; // red
+                    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`;
+                } else {
+                    // character
+                    color = '#8a2be2'; // purple
+                    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+                }
+                
+                const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
                 
                 return {
                     id: node.id,
                     label: node.name,
                     title: `Type: ${node.type}\nSummary: ${node.summary || 'None'}`,
-                    color: {
-                        background: color,
-                        border: '#28283a',
-                        highlight: { background: color, border: '#fff' }
-                    },
-                    font: { color: '#f5f5f7' },
-                    shape: 'dot',
-                    size: 20
+                    image: svgUrl,
+                    shape: 'image',
+                    size: 25,
+                    font: { color: '#f5f5f7', size: 12, vadjust: 25 }
                 };
             });
             
