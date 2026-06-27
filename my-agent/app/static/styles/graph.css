@@ -1,5 +1,5 @@
 #graph-panel {
-    flex: 1.5; /* Takes up more space */
+    /* Handled via inline styles for resizing */
 }
 
 #graph-header {

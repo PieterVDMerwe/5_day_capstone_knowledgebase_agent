@@ -1,3 +1,17 @@
+window.appSchemas = {};
+
+document.addEventListener("DOMContentLoaded", async () => {
+    try {
+        const res = await fetch('/api/schemas');
+        const data = await res.json();
+        if (data.status === 'success') {
+            window.appSchemas = data.data;
+        }
+    } catch (e) {
+        console.error("Failed to load schemas", e);
+    }
+});
+
 // Step 4.3: State Machine Implementation
 const State = {
     IDLE: 'Idle',
@@ -8,7 +22,7 @@ const State = {
 };
 
 let currentState = State.IDLE;
-let currentDraft = null;
+window.currentDraft = null;
 
 function updateStatus(state) {
     currentState = state;
@@ -61,7 +75,7 @@ document.getElementById('send-btn').addEventListener('click', async () => {
     try {
         const payload = {
             user_message: text,
-            draft_state: currentDraft
+            draft_state: window.currentDraft
         };
         
         const response = await fetch('/api/chat', {
@@ -76,9 +90,9 @@ document.getElementById('send-btn').addEventListener('click', async () => {
         appendMessage('system', result.message);
         
         if (result.data && result.data.draft) {
-            currentDraft = result.data.draft;
+            window.currentDraft = result.data.draft;
             document.querySelector('.placeholder-text').style.display = 'none';
-            renderForm(currentDraft);
+            renderForm(window.currentDraft);
             updateStatus(State.DRAFT_RECEIVED);
         } else if (result.data && result.data.answer) {
             appendMessage('system', result.data.answer);
@@ -99,7 +113,7 @@ document.getElementById('chat-input').addEventListener('keypress', (e) => {
 });
 
 document.getElementById('discard-btn').addEventListener('click', () => {
-    currentDraft = null;
+    window.currentDraft = null;
     document.getElementById('dynamic-form').innerHTML = '';
     document.querySelector('.placeholder-text').style.display = 'block';
     updateStatus(State.IDLE);
@@ -116,11 +130,11 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     }
     
     // Merge back any internal fields or arrays that aren't strings in the form
-    const payloadDraft = { ...currentDraft, ...updatedDraft };
+    const payloadDraft = { ...window.currentDraft, ...updatedDraft };
     
     // We try to convert comma-separated fields back to arrays based on original draft format
     Object.keys(payloadDraft).forEach(key => {
-        if (Array.isArray(currentDraft[key]) && typeof updatedDraft[key] === 'string') {
+        if (Array.isArray(window.currentDraft[key]) && typeof updatedDraft[key] === 'string') {
             payloadDraft[key] = updatedDraft[key].split(',').map(s => s.trim()).filter(Boolean);
         }
     });
@@ -142,7 +156,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
             updateStatus(State.DRAFT_RECEIVED); // Leave draft open so user can fix issues
         } else {
             appendMessage('system', result.message);
-            currentDraft = null;
+            window.currentDraft = null;
             document.getElementById('dynamic-form').innerHTML = '';
             document.querySelector('.placeholder-text').style.display = 'block';
             updateStatus(State.IDLE);
@@ -155,3 +169,78 @@ document.getElementById('save-btn').addEventListener('click', async () => {
         updateStatus(State.DRAFT_RECEIVED);
     }
 });
+
+// Load Entity from DB into Editor
+window.loadEntityIntoEditor = async function(name) {
+    try {
+        updateStatus(State.GENERATING);
+        const res = await fetch(`/api/entity/${encodeURIComponent(name)}`);
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            let fetchedDraft = data.data;
+            const type = fetchedDraft.entity_type;
+            
+            // Merge the loaded data onto the empty schema template to guarantee all fields are present
+            if (window.appSchemas && window.appSchemas[type]) {
+                window.currentDraft = { ...window.appSchemas[type], ...fetchedDraft };
+            } else {
+                window.currentDraft = fetchedDraft;
+            }
+            
+            document.querySelector('.placeholder-text').style.display = 'none';
+            renderForm(window.currentDraft);
+            updateStatus(State.DRAFT_RECEIVED);
+            appendMessage('system', `Loaded '${name}' into the editor.`);
+        } else {
+            appendMessage('system', 'Error loading entity: ' + data.message);
+            updateStatus(State.IDLE);
+        }
+    } catch (err) {
+        appendMessage('system', 'Error loading entity: ' + err.message);
+        updateStatus(State.IDLE);
+    }
+};
+
+// View Toggles
+document.getElementById('view-graph-btn').addEventListener('click', (e) => {
+    e.target.style.opacity = '1';
+    document.getElementById('view-list-btn').style.opacity = '0.5';
+    document.getElementById('graph-container').style.display = 'block';
+    document.getElementById('list-container').style.display = 'none';
+});
+
+document.getElementById('view-list-btn').addEventListener('click', (e) => {
+    e.target.style.opacity = '1';
+    document.getElementById('view-graph-btn').style.opacity = '0.5';
+    document.getElementById('graph-container').style.display = 'none';
+    document.getElementById('list-container').style.display = 'flex';
+    window.renderList();
+});
+
+// List Renderer
+window.renderList = function() {
+    const listDiv = document.getElementById('list-items');
+    listDiv.innerHTML = '';
+    const query = document.getElementById('list-search').value.toLowerCase();
+    
+    const nodes = window.allNodes || [];
+    const filtered = nodes.filter(n => n.id.toLowerCase().includes(query));
+    
+    filtered.forEach(node => {
+        const item = document.createElement('div');
+        item.style.padding = '10px';
+        item.style.borderBottom = '1px solid var(--border)';
+        item.style.cursor = 'pointer';
+        item.style.color = 'var(--text-color)';
+        item.innerHTML = `<strong>${node.id}</strong> <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">(${node.group})</span>`;
+        
+        item.addEventListener('click', () => window.loadEntityIntoEditor(node.id));
+        item.addEventListener('mouseover', () => item.style.backgroundColor = 'var(--panel-bg)');
+        item.addEventListener('mouseout', () => item.style.backgroundColor = 'transparent');
+        
+        listDiv.appendChild(item);
+    });
+};
+
+document.getElementById('list-search').addEventListener('input', window.renderList);

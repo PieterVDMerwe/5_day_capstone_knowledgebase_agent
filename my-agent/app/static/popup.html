@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lore Vault Graph</title>
+    <link rel="stylesheet" href="/styles/main.css">
+    <link rel="stylesheet" href="/styles/graph.css">
+</head>
+<body style="margin: 0; padding: 0; overflow: hidden; background: var(--bg-color);">
+    <div id="graph-container" style="width: 100vw; height: 100vh;"></div>
+    
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="/js/ui_graph.js"></script>
+    <script>
+        // Notify the main window to pull the graph back in when this popup is closed
+        window.addEventListener('beforeunload', () => {
+            if (window.opener && window.opener.pullInGraph) {
+                window.opener.pullInGraph(true); // true = called from popup close
+            }
+        });
+    </script>
+</body>
+</html>

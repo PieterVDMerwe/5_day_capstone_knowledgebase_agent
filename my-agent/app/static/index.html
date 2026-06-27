@@ -9,9 +9,18 @@
     <link rel="stylesheet" href="/styles/graph.css">
 </head>
 <body>
-    <div id="app-container">
+    <div id="top-bar" style="height: 45px; background: var(--bg-color); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; justify-content: space-between;">
+        <strong style="color: var(--text-color); font-size: 16px;">Lore Vault Studio</strong>
+        <div class="view-toggles">
+            <button id="toggle-chat-btn" style="opacity: 1;">Chat Panel</button>
+            <button id="toggle-editor-btn" style="opacity: 1; margin-left: 5px;">Editor</button>
+            <button id="toggle-explorer-btn" style="opacity: 1; margin-left: 5px;">Explorer</button>
+        </div>
+    </div>
+    
+    <div id="app-container" style="height: calc(100vh - 45px);">
         <!-- Left Panel: Chat -->
-        <section id="chat-panel">
+        <section id="chat-panel" style="width: 350px; flex: none; min-width: 250px;">
             <div id="chat-history">
                 <div class="message system">Welcome to Lore Vault Studio. Describe an entity to draft it, or ask a question about the lore!</div>
             </div>
@@ -22,8 +31,10 @@
             <div id="status-indicator">Status: Idle</div>
         </section>
 
+        <div class="resizer" id="resizer-1"></div>
+
         <!-- Middle Panel: Editor -->
-        <section id="editor-panel">
+        <section id="editor-panel" style="flex: 1 1 auto; min-width: 300px;">
             <div id="editor-header">
                 <h2>Entity Editor</h2>
                 <div class="actions">
@@ -37,14 +48,29 @@
             </div>
         </section>
 
-        <!-- Right Panel: Graph -->
-        <section id="graph-panel">
-            <div id="graph-header">
-                <h2>Lore Graph</h2>
+        <div class="resizer" id="resizer-2"></div>
+
+        <!-- Right Panel: Graph & Explorer -->
+        <section id="graph-panel" style="width: 450px; flex: none; min-width: 300px;">
+            <div id="graph-header" style="display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid var(--border);">
+                <h2>Vault Explorer</h2>
+                <div class="view-toggles" style="display: flex; gap: 5px;">
+                    <button id="view-graph-btn" style="opacity: 1;">Graph</button>
+                    <button id="view-list-btn" style="opacity: 0.5;">List</button>
+                    <button id="pop-out-btn" style="margin-left: 10px;">⇱ Pop Out</button>
+                    <button id="pull-in-btn" style="margin-left: 10px; display: none;">⇲ Pull In</button>
+                </div>
             </div>
-            <div id="graph-container">
-                <!-- D3/Sigma visualization goes here in Phase 5 -->
+            
+            <div id="graph-container" style="flex: 1; position: relative;">
                 <p class="placeholder-text" style="padding: 20px; color: var(--text-muted);">Graph visualization pending Phase 5...</p>
+            </div>
+            
+            <div id="list-container" style="display: none; flex: 1; flex-direction: column; padding: 20px;">
+                <input type="text" id="list-search" placeholder="Search entities..." style="margin-bottom: 15px;" />
+                <div id="list-items" style="flex: 1; overflow-y: auto;">
+                    <!-- Items injected via JS -->
+                </div>
             </div>
         </section>
     </div>
@@ -53,5 +79,6 @@
     <script src="/js/ui_renderer.js"></script>
     <script src="/js/ui_state.js"></script>
     <script src="/js/ui_graph.js"></script>
+    <script src="/js/ui_layout.js"></script>
 </body>
 </html>

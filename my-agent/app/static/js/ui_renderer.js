@@ -41,6 +41,40 @@ function renderForm(flatDict) {
         input.value = displayValue || '';
         input.name = key;
         
+        // Listen for entity_type changes to swap schema dynamically
+        if (key === 'entity_type') {
+            input.addEventListener('change', (e) => {
+                const newType = e.target.value.trim();
+                if (window.appSchemas && window.appSchemas[newType]) {
+                    // Gather current form values so we don't lose overlapping data (like name, summary)
+                    const formData = new FormData(form);
+                    const currentValues = {};
+                    for (const [k, v] of formData.entries()) {
+                        currentValues[k] = v;
+                    }
+                    
+                    // Load the empty schema template
+                    const newDraft = { ...window.appSchemas[newType] };
+                    
+                    // Restore overlapping values
+                    Object.keys(newDraft).forEach(k => {
+                        if (currentValues[k] !== undefined && currentValues[k] !== "") {
+                            newDraft[k] = currentValues[k];
+                        }
+                    });
+                    
+                    // Ensure the new type is set
+                    newDraft.entity_type = newType;
+                    
+                    // Update global state and re-render
+                    if (window.currentDraft !== undefined) {
+                        window.currentDraft = newDraft;
+                    }
+                    renderForm(newDraft);
+                }
+            });
+        }
+        
         group.appendChild(label);
         group.appendChild(input);
         form.appendChild(group);

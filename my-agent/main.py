@@ -90,9 +90,22 @@ async def chat_endpoint(req: ChatRequest):
 
 @app.post("/api/save", response_model=ApiResponse)
 async def save_endpoint(req: SaveRequest):
-    """Full Pipeline: Validate Logic -> Insert Links -> Save File -> Sync to DB"""
+    """Full Pipeline: Validate Schema -> Validate Logic -> Insert Links -> Save File -> Sync to DB"""
     try:
+        from app.validators import validate_entity_data
+        
         draft = req.draft_state
+        
+        # 0. Schema Validation
+        is_valid, cleaned_draft, linter_msg = validate_entity_data(draft)
+        if not is_valid:
+            return ApiResponse(
+                status="error",
+                current_step="Schema Validation Failed",
+                data={"linter_report": linter_msg, "draft": draft},
+                message=f"Schema validation failed: {linter_msg}"
+            )
+        draft = cleaned_draft
         name = draft.get("name", "Unknown")
         
         # 1. Truth Keeper validation
@@ -147,6 +160,51 @@ async def get_graph(entity_id: Optional[str] = None):
         return ApiResponse(status="success", current_step="Graph Retrieved", data=graph_data, message=f"Retrieved {len(nodes)} nodes.")
     except Exception as e:
         return ApiResponse(status="error", current_step="Database Error", data=None, message=str(e))
+
+@app.get("/api/entity/{name}", response_model=ApiResponse)
+async def get_entity_endpoint(name: str):
+    try:
+        from app.database import get_entity
+        from app.parser import parse_frontmatter
+        
+        entity = get_entity(name)
+        if not entity:
+            return ApiResponse(status="error", current_step="Fetch Entity", data=None, message="Entity not found")
+            
+        draft = {"name": entity["name"], "entity_type": entity["entity_type"]}
+        if entity.get("metadata"):
+            draft.update(entity["metadata"])
+            
+        _, body = parse_frontmatter(entity["raw_markdown"])
+        draft["content"] = body
+        
+        return ApiResponse(status="success", current_step="Entity Fetched", data=draft, message="Loaded entity")
+    except Exception as e:
+        return ApiResponse(status="error", current_step="Fetch Error", data=None, message=str(e))
+
+@app.get("/api/schemas", response_model=ApiResponse)
+async def get_schemas():
+    try:
+        from app.validators import MODEL_MAP
+        schemas = {}
+        for name, model in MODEL_MAP.items():
+            empty_dict = {}
+            for field_name, field_info in model.model_fields.items():
+                if field_name == "entity_type":
+                    empty_dict[field_name] = name
+                    continue
+                    
+                # Use simple types for frontend rendering
+                if "list" in str(field_info.annotation).lower():
+                    empty_dict[field_name] = []
+                else:
+                    empty_dict[field_name] = ""
+                    
+            schemas[name] = empty_dict
+            
+        return ApiResponse(status="success", current_step="Schemas Fetched", data=schemas, message="Loaded schemas")
+    except Exception as e:
+        return ApiResponse(status="error", current_step="Fetch Error", data=None, message=str(e))
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "app", "static")
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
