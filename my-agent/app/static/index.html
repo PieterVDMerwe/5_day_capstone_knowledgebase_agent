@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lore Vault Studio</title>
+    <link rel="stylesheet" href="/styles/main.css">
+    <link rel="stylesheet" href="/styles/chat.css">
+    <link rel="stylesheet" href="/styles/graph.css">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Left Panel: Chat -->
+        <section id="chat-panel">
+            <div id="chat-history">
+                <div class="message system">Welcome to Lore Vault Studio. Describe an entity to draft it, or ask a question about the lore!</div>
+            </div>
+            <div id="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Type your query or instruction..." />
+                <button id="send-btn">Send</button>
+            </div>
+            <div id="status-indicator">Status: Idle</div>
+        </section>
+
+        <!-- Middle Panel: Editor -->
+        <section id="editor-panel">
+            <div id="editor-header">
+                <h2>Entity Editor</h2>
+                <div class="actions">
+                    <button id="save-btn" disabled>Save to Vault</button>
+                    <button id="discard-btn" disabled>Discard</button>
+                </div>
+            </div>
+            <div id="editor-content">
+                <p class="placeholder-text">Draft an entity to see form fields here...</p>
+                <form id="dynamic-form"></form>
+            </div>
+        </section>
+
+        <!-- Right Panel: Graph -->
+        <section id="graph-panel">
+            <div id="graph-header">
+                <h2>Lore Graph</h2>
+            </div>
+            <div id="graph-container">
+                <!-- D3/Sigma visualization goes here in Phase 5 -->
+                <p class="placeholder-text" style="padding: 20px; color: var(--text-muted);">Graph visualization pending Phase 5...</p>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="/js/ui_renderer.js"></script>
+    <script src="/js/ui_state.js"></script>
+    <script src="/js/ui_graph.js"></script>
+</body>
+</html>

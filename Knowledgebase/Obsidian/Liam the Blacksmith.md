@@ -1,20 +1,14 @@
 ---
-name: "Liam the Blacksmith"
-type: "general"
-summary: "name: Liam the Blacksmith"
----
-
 name: Liam the Blacksmith
-type: character
-species: Human
-summary: A skilled blacksmith known for his durable and finely crafted tools and weapons. He operates a smithy in [Unknown Location].
+entity_type: Character
+summary: A burly blacksmith who secretly crafts weapons for the Bloodrunners.
+aliases: ["Liam", "The Iron Bear"]
+tags: ["npc", "blacksmith", "secret"]
+age: "42"
 status: Alive
-location: Unknown
-age: Unknown
-birth_year: Unknown
-death_year: Unknown
-faction: None
-relationships:
-  positive: []
-  neutral: []
-  negative: []
+faction_affiliations: ["The Bloodrunners", "Iron Guild"]
+current_location: Oakhaven Town
+physical_description: Tall, muscular, with soot-stained hands and a thick beard.
+personality_traits: ["Gruff", "Loyal", "Secretive"]
+---
+Liam spends most of his time at [[The Rusty Anvil Tavern]] after a long day of forging. He was once approached by [[Drakath]], asking for a custom weapon, which resulted in the creation of the [[Bloodlust Warhammer]]. He is currently located in [[Oakhaven Town]].

@@ -1,0 +1,14 @@
+#graph-panel {
+    flex: 1.5; /* Takes up more space */
+}
+
+#graph-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+#graph-container {
+    flex: 1;
+    position: relative;
+    background-color: var(--bg-color);
+}

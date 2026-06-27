@@ -1,13 +1,12 @@
 ---
-name: "Bloodlust Warhammer"
-type: "item"
----
----
 name: Bloodlust Warhammer
-type: item
-summary: A formidable warhammer, forged by Liam the Blacksmith. It is a testament to his craftsmanship, known for its balance and striking power.
-owner: Liam the Blacksmith
-origin: Liam's Smithy
-location: Unknown
-rarity: Rare
+entity_type: Item
+summary: A cursed warhammer that drains the life of its victims.
+aliases: ["The Sanguine Smasher"]
+tags: ["weapon", "cursed", "artifact"]
+item_type: Weapon
+creator: Liam the Blacksmith
+current_owner: Drakath
+materials: ["Dark Iron", "Vampiric Crystal"]
 ---
+Forged by [[Liam the Blacksmith]], this terrifying weapon is wielded by [[Drakath]]. It is rumored to have been used during the [[Battle of Oakhaven]].
