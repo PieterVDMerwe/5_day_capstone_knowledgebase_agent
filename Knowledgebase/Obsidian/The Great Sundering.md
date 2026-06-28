@@ -9,4 +9,5 @@ participants: ["The Ancient Magi", "The Dragons"]
 locations_involved: ["The Northern Reaches"]
 outcome: Creation of the Chasm of Souls
 ---
-The Great Sundering changed the world forever. It wiped out many of the ancient [[Elves]], and altered the landscape near [[Oakhaven Town]].
+
+[[The Great Sundering]] changed the world forever. It wiped out many of the ancient [[Elves]] and Dwarves, and altered the landscape near [[Oakhaven Town]].

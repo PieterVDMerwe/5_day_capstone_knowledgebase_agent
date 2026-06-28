@@ -14,7 +14,22 @@ from app.database import get_db_connection
 from app.file_writer import write_entity_to_vault
 from app.parser import sync_single_file
 
-app = FastAPI(title="Lore Vault API")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # Shutdown hook: unload Ollama model to free VRAM
+    if llm_client.provider == "ollama" and llm_client.model_name:
+        try:
+            import ollama
+            print(f"Unloading Ollama model: {llm_client.model_name}")
+            ollama.generate(model=llm_client.model_name, prompt="", keep_alive=0)
+            print("Ollama model unloaded successfully.")
+        except Exception as e:
+            print(f"Failed to unload Ollama model on shutdown: {e}")
+
+app = FastAPI(title="Lore Vault API", lifespan=lifespan)
 
 # Universal Protocol Envelope ensuring UI consistency
 class ApiResponse(BaseModel):
@@ -27,9 +42,13 @@ class ChatRequest(BaseModel):
     user_message: str
     draft_state: Optional[Dict[str, Any]] = None
     chat_history: Optional[List[Dict[str, str]]] = None
+    provider: Optional[str] = "gemini"
+    model: Optional[str] = "gemini-2.5-flash"
 
 class SaveRequest(BaseModel):
     draft_state: Dict[str, Any]
+    provider: Optional[str] = "gemini"
+    model: Optional[str] = "gemini-2.5-flash"
 
 # Initialize LLM and Agents
 llm_client = LLMClient(provider="gemini")
@@ -43,6 +62,11 @@ truth_keeper = TruthKeeper(llm_client)
 async def chat_endpoint(req: ChatRequest):
     """Stateless chat endpoint wrapping requests in the Universal Protocol Envelope."""
     try:
+        if req.provider:
+            llm_client.provider = req.provider
+        if req.model:
+            llm_client.model_name = req.model
+            
         route = orchestrator.route_request(req.user_message)
         
         if route == "editor_agent":
@@ -94,9 +118,17 @@ async def save_endpoint(req: SaveRequest):
     try:
         from app.validators import validate_entity_data
         
+        if req.provider:
+            llm_client.provider = req.provider
+        if req.model:
+            llm_client.model_name = req.model
+            
         draft = req.draft_state
         
         # 0. Schema Validation
+        # Any draft saved through this endpoint is now populated
+        draft["is_empty"] = False
+        
         is_valid, cleaned_draft, linter_msg = validate_entity_data(draft)
         if not is_valid:
             return ApiResponse(
@@ -127,6 +159,27 @@ async def save_endpoint(req: SaveRequest):
             linked_content = linker_agent.insert_links(draft["content"])
             draft["content"] = linked_content
             
+        # 2.5 Generate stubs for missing wikilinks
+        from app.parser import extract_all_wiki_links
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM entities")
+        known_entities = {row["name"] for row in cursor.fetchall()}
+        conn.close()
+        
+        all_links = extract_all_wiki_links(draft)
+        for link in all_links:
+            if link not in known_entities and link != name:
+                stub_draft = {
+                    "name": link,
+                    "entity_type": "General",
+                    "is_empty": True,
+                    "summary": f"Auto-generated empty stub for {link}."
+                }
+                stub_filepath = write_entity_to_vault(stub_draft)
+                sync_single_file(stub_filepath)
+                known_entities.add(link)
+
         # 3. Write to file
         filepath = write_entity_to_vault(draft)
         
@@ -147,14 +200,23 @@ async def get_graph(entity_id: Optional[str] = None):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT name, entity_type FROM entities")
-        nodes = [dict(r) for r in cursor.fetchall()]
+        cursor.execute("SELECT name, entity_type, metadata FROM entities")
+        import json
+        nodes = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            meta = json.loads(d["metadata"]) if d.get("metadata") else {}
+            d["is_empty"] = meta.get("is_empty", False)
+            if "metadata" in d:
+                del d["metadata"]
+            nodes.append(d)
+            
         cursor.execute("SELECT source_name, target_name, relation_type FROM edges")
         edges = [dict(r) for r in cursor.fetchall()]
         conn.close()
         
         graph_data = {
-            "nodes": [{"id": n["name"], "label": n["name"], "group": n["entity_type"]} for n in nodes],
+            "nodes": [{"id": n["name"], "label": n["name"], "group": n["entity_type"], "is_empty": n.get("is_empty", False)} for n in nodes],
             "links": [{"source": e["source_name"], "target": e["target_name"], "label": e["relation_type"]} for e in edges]
         }
         return ApiResponse(status="success", current_step="Graph Retrieved", data=graph_data, message=f"Retrieved {len(nodes)} nodes.")
@@ -182,6 +244,25 @@ async def get_entity_endpoint(name: str):
     except Exception as e:
         return ApiResponse(status="error", current_step="Fetch Error", data=None, message=str(e))
 
+@app.delete("/api/entity/{name}", response_model=ApiResponse)
+async def delete_entity_endpoint(name: str):
+    try:
+        from app.database import delete_entity
+        import os
+        
+        # Delete from DB
+        delete_entity(name)
+        
+        # Delete file
+        vault_dir = r"E:\Projects\5_day_capstone_knowledgebase_agent\Knowledgebase\Obsidian"
+        file_path = os.path.join(vault_dir, f"{name}.md")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+        return ApiResponse(status="success", current_step="Entity Deleted", data=None, message=f"Deleted entity '{name}'")
+    except Exception as e:
+        return ApiResponse(status="error", current_step="Delete Error", data=None, message=str(e))
+
 @app.get("/api/schemas", response_model=ApiResponse)
 async def get_schemas():
     try:
@@ -192,6 +273,8 @@ async def get_schemas():
             for field_name, field_info in model.model_fields.items():
                 if field_name == "entity_type":
                     empty_dict[field_name] = name
+                    continue
+                if field_name == "is_empty":
                     continue
                     
                 # Use simple types for frontend rendering

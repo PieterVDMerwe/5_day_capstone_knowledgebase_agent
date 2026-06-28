@@ -115,6 +115,15 @@ def insert_entity(name: str, entity_type: str, summary: str, raw_markdown: str, 
     conn.commit()
     conn.close()
 
+def delete_entity(name: str):
+    """Deletes an entity and its associated data."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM name_index WHERE original_name = ?", (name,))
+    cursor.execute("DELETE FROM entities WHERE name = ?", (name,))
+    conn.commit()
+    conn.close()
+
 def insert_edge(source_name: str, target_name: str, relation_type: str, weight: int = 1):
     """Inserts a directed edge between two entities."""
     conn = get_db_connection()

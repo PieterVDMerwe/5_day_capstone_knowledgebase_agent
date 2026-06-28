@@ -8,10 +8,12 @@ class EntityBase(BaseModel):
     summary: str = Field(description="A 1-2 sentence summary of the entity.")
     aliases: List[str] = Field(default_factory=list, description="Alternative names or titles.")
     tags: List[str] = Field(default_factory=list, description="Tags for categorization.")
+    is_empty: Optional[bool] = Field(False, description="Flag indicating if the note is an empty stub.")
 
 class CharacterModel(EntityBase):
     """Schema for Character entities."""
     entity_type: Literal["Character"] = "Character"
+    species: Optional[str] = Field(None, description="The species of the character. Preserve or add wikilinks (e.g. [[Species Name]]) if provided or appropriate.")
     age: Optional[str] = Field(None, description="Age of the character.")
     status: Optional[Literal["Alive", "Deceased", "Unknown"]] = Field("Unknown", description="Current living status.")
     faction_affiliations: List[str] = Field(default_factory=list, description="Factions this character belongs to.")

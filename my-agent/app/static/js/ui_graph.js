@@ -11,6 +11,16 @@ async function loadGraph() {
         const placeholder = document.querySelector('#graph-panel .placeholder-text');
         if (placeholder) placeholder.style.display = 'none';
 
+        const showEmpty = document.getElementById('toggle-empty-btn') ? document.getElementById('toggle-empty-btn').checked : true;
+        
+        let filteredNodes = graph.nodes;
+        if (!showEmpty) {
+            filteredNodes = graph.nodes.filter(n => !n.is_empty);
+        }
+        
+        const nodeIds = new Set(filteredNodes.map(n => n.id));
+        const filteredLinks = graph.links.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
+
         const width = container.clientWidth;
         const height = container.clientHeight || window.innerHeight - 60; // 60 for header offset
 
@@ -31,8 +41,8 @@ async function loadGraph() {
         
         svg.call(zoom);
 
-        const simulation = d3.forceSimulation(graph.nodes)
-            .force("link", d3.forceLink(graph.links).id(d => d.id).distance(150))
+        const simulation = d3.forceSimulation(filteredNodes)
+            .force("link", d3.forceLink(filteredLinks).id(d => d.id).distance(150))
             .force("charge", d3.forceManyBody().strength(-500))
             .force("center", d3.forceCenter(width / 2, height / 2));
 
@@ -41,45 +51,41 @@ async function loadGraph() {
             .attr("stroke", "var(--border)")
             .attr("stroke-opacity", 0.6)
             .selectAll("line")
-            .data(graph.links)
+            .data(filteredLinks)
             .join("line")
             .attr("stroke-width", 2);
 
         // Map groups to colors safely
         const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-        // Map groups to emoji icons
+        // Map groups to Material Symbols
         const iconMap = {
-            "Character": "👤",
-            "Location": "🏰",
-            "Item": "🗡️",
-            "Faction": "🛡️",
-            "Event": "🔥",
-            "Species": "🐺"
+            "Character": "person",
+            "Location": "castle",
+            "Item": "swords",
+            "Faction": "shield",
+            "Event": "local_fire_department",
+            "Species": "pets",
+            "General": "description"
         };
 
         // Draw Node Groups
         const node = g.append("g")
             .selectAll("g")
-            .data(graph.nodes)
+            .data(filteredNodes)
             .join("g")
             .call(drag(simulation));
 
-        // Background Circle
-        node.append("circle")
-            .attr("r", 16)
-            .attr("fill", d => color(d.group))
-            .attr("stroke", "#fff")
-            .attr("stroke-width", 2)
-            .style("cursor", "pointer");
-
-        // Node Icon
+        // Silhouette Icon (Material Symbol as the only shape)
         node.append("text")
-            .text(d => iconMap[d.group] || "📄")
-            .attr("font-size", "16px")
+            .attr("class", "material-symbols-outlined")
+            .text(d => iconMap[d.group] || "description")
+            .attr("font-size", "28px")
+            .attr("fill", d => d.is_empty ? "#888888" : "var(--accent)")
             .attr("text-anchor", "middle")
-            .attr("dy", "5px")
-            .style("pointer-events", "none");
+            .attr("dy", "10px") // Adjust for larger font size
+            .style("opacity", d => d.is_empty ? 0.65 : 1)
+            .style("cursor", "pointer");
 
         // Text Label
         node.append("text")
@@ -150,5 +156,11 @@ async function loadGraph() {
 window.loadGraph = loadGraph;
 
 // Initial load
-document.addEventListener("DOMContentLoaded", loadGraph);
+document.addEventListener("DOMContentLoaded", () => {
+    loadGraph();
+    const toggleBtn = document.getElementById('toggle-empty-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('change', loadGraph);
+    }
+});
 window.addEventListener('resize', loadGraph);

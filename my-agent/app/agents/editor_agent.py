@@ -22,13 +22,24 @@ class EditorAgent:
             response_schema=model_class
         )
         
+        raw_json_str = raw_json_str.strip()
+        import re
+        
+        # 1. Try extracting from markdown code block
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw_json_str, re.DOTALL)
+        if json_match:
+            raw_json_str = json_match.group(1)
+        else:
+            # 2. Try aggressive curly brace extraction
+            start = raw_json_str.find('{')
+            end = raw_json_str.rfind('}')
+            if start != -1 and end != -1:
+                raw_json_str = raw_json_str[start:end+1]
+                
         try:
-            # Some providers return markdown fenced json
-            if raw_json_str.startswith("```json"):
-                raw_json_str = raw_json_str[7:-3].strip()
             data = json.loads(raw_json_str)
         except json.JSONDecodeError:
-            return {"error": "LLM failed to output valid JSON"}
+            return {"error": f"LLM failed to output valid JSON. Raw output: {raw_json_str[:100]}..."}
             
         # Run through our static linter and fuzzy enum mapper
         is_valid, cleaned_data, msg = validate_entity_data(data)

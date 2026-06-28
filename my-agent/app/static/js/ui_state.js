@@ -31,23 +31,27 @@ function updateStatus(state) {
     // Toggle button states based on 5-Step UI Pipeline
     const saveBtn = document.getElementById('save-btn');
     const discardBtn = document.getElementById('discard-btn');
+    const deleteBtn = document.getElementById('delete-btn');
     const sendBtn = document.getElementById('send-btn');
     const input = document.getElementById('chat-input');
     
     if (state === State.DRAFT_RECEIVED) {
         saveBtn.disabled = false;
         discardBtn.disabled = false;
+        if (deleteBtn) deleteBtn.disabled = false;
         sendBtn.disabled = false;
         input.disabled = false;
     } else if (state === State.IDLE) {
         saveBtn.disabled = true;
         discardBtn.disabled = true;
+        if (deleteBtn) deleteBtn.disabled = true;
         sendBtn.disabled = false;
         input.disabled = false;
     } else {
         // Generating, Saving, Syncing
         saveBtn.disabled = true;
         discardBtn.disabled = true;
+        if (deleteBtn) deleteBtn.disabled = true;
         sendBtn.disabled = true;
         input.disabled = true;
     }
@@ -62,6 +66,14 @@ function appendMessage(sender, text) {
     history.scrollTop = history.scrollHeight;
 }
 
+function revertToAppropriateState() {
+    if (window.currentDraft && Object.keys(window.currentDraft).length > 0) {
+        updateStatus(State.DRAFT_RECEIVED);
+    } else {
+        updateStatus(State.IDLE);
+    }
+}
+
 document.getElementById('send-btn').addEventListener('click', async () => {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
@@ -70,39 +82,73 @@ document.getElementById('send-btn').addEventListener('click', async () => {
     appendMessage('user', text);
     input.value = '';
     
+    const reqBody = {
+        user_message: text,
+        provider: document.getElementById('llm-provider-select')?.value || 'gemini',
+        model: document.getElementById('llm-model-input')?.value || 'gemini-2.5-flash'
+    };
+    if (window.currentDraft && Object.keys(window.currentDraft).length > 0) {
+        reqBody.draft_state = window.currentDraft;
+    }
+    
     updateStatus(State.GENERATING);
     
     try {
-        const payload = {
-            user_message: text,
-            draft_state: window.currentDraft
-        };
-        
-        const response = await fetch('/api/chat', {
+        const res = await fetch('/api/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(reqBody)
         });
         
-        const result = await response.json();
-        // Envelope: { status, current_step, data, message }
+        const data = await res.json();
         
-        appendMessage('system', result.message);
-        
-        if (result.data && result.data.draft) {
-            window.currentDraft = result.data.draft;
-            document.querySelector('.placeholder-text').style.display = 'none';
-            renderForm(window.currentDraft);
-            updateStatus(State.DRAFT_RECEIVED);
-        } else if (result.data && result.data.answer) {
-            appendMessage('system', result.data.answer);
-            updateStatus(State.IDLE);
+        if (data.status === 'success' || data.status === 'warning') {
+            if (data.data.route === 'editor_agent' && data.data.draft) {
+                window.currentDraft = data.data.draft;
+                renderForm(window.currentDraft);
+                document.querySelector('.placeholder-text').style.display = 'none';
+                updateStatus(State.DRAFT_RECEIVED);
+            } else if (data.data.route === 'lore_seeker' && data.data.answer) {
+                appendMessage('agent', data.data.answer);
+                revertToAppropriateState();
+            }
+            if (data.status === 'warning') {
+                appendMessage('system', `Warning: ${data.message}`);
+            }
         } else {
-            updateStatus(State.IDLE);
+            appendMessage('system', `Error: ${data.message}`);
+            revertToAppropriateState();
         }
     } catch (err) {
-        appendMessage('system', 'Error connecting to server: ' + err.message);
-        updateStatus(State.IDLE);
+        appendMessage('system', `Connection Error: ${err.message}`);
+        revertToAppropriateState();
+    }
+});
+
+// Auto-toggle model input when provider changes
+document.getElementById('llm-provider-select')?.addEventListener('change', (e) => {
+    const modelInput = document.getElementById('llm-model-input');
+    if (modelInput) {
+        modelInput.innerHTML = ''; // Clear options
+        if (e.target.value === 'ollama') {
+            const models = [
+                "gemma4-e2b:latest", "qwen3:4b", "gemma4:12b", 
+                "batiai/gemma4-e2b:q4", "hf.co/featherless-ai-quants/AstroMLab-AstroSage-8B-GGUF:Q4_K_M", 
+                "sciphi/triplex:latest", "phi4-mini:latest", 
+                "deepseek-r1:7b", "qwen2.5-coder:1.5b"
+            ];
+            models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.innerText = m;
+                modelInput.appendChild(opt);
+            });
+        } else {
+            const opt = document.createElement('option');
+            opt.value = 'gemini-2.5-flash';
+            opt.innerText = 'gemini-2.5-flash';
+            modelInput.appendChild(opt);
+        }
     }
 });
 
@@ -118,6 +164,53 @@ document.getElementById('discard-btn').addEventListener('click', () => {
     document.querySelector('.placeholder-text').style.display = 'block';
     updateStatus(State.IDLE);
     appendMessage('system', 'Draft discarded.');
+});
+
+document.getElementById('delete-btn')?.addEventListener('click', () => {
+    if (!window.currentDraft || !window.currentDraft.name) {
+        appendMessage('system', 'Cannot delete: no active entity with a name.');
+        return;
+    }
+    
+    // Show custom modal
+    document.getElementById('delete-modal-text').innerText = `Are you sure you want to delete '${window.currentDraft.name}'? This will permanently remove the markdown file and erase it from the graph database.`;
+    document.getElementById('delete-modal').style.display = 'flex';
+});
+
+document.getElementById('delete-modal-cancel')?.addEventListener('click', () => {
+    document.getElementById('delete-modal').style.display = 'none';
+});
+
+document.getElementById('delete-modal-confirm')?.addEventListener('click', async () => {
+    document.getElementById('delete-modal').style.display = 'none';
+    
+    if (!window.currentDraft || !window.currentDraft.name) return;
+    
+    appendMessage('system', `Deleting entity '${window.currentDraft.name}'...`);
+    updateStatus(State.GENERATING); // Locks buttons
+    
+    try {
+        const res = await fetch(`/api/entity/${encodeURIComponent(window.currentDraft.name)}`, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            appendMessage('system', data.message);
+            window.currentDraft = null;
+            document.getElementById('dynamic-form').innerHTML = '';
+            document.querySelector('.placeholder-text').style.display = 'block';
+            updateStatus(State.IDLE);
+            if (window.loadGraph) window.loadGraph();
+            if (window.renderList) window.renderList();
+        } else {
+            appendMessage('system', `Failed to delete: ${data.message}`);
+            revertToAppropriateState();
+        }
+    } catch (e) {
+        appendMessage('system', `Error deleting entity: ${e.message}`);
+        revertToAppropriateState();
+    }
 });
 
 document.getElementById('save-btn').addEventListener('click', async () => {
@@ -139,14 +232,20 @@ document.getElementById('save-btn').addEventListener('click', async () => {
         }
     });
 
-    updateStatus(State.SAVING);
-    appendMessage('system', 'Validating logic, linking entities, and saving to vault...');
+    const reqBody = {
+        draft_state: payloadDraft,
+        provider: document.getElementById('llm-provider-select')?.value || 'gemini',
+        model: document.getElementById('llm-model-input')?.value || 'gemini-2.5-flash'
+    };
+    
+    appendMessage('system', 'Saving entity to graph...');
+    updateStatus(State.GENERATING);
     
     try {
         const response = await fetch('/api/save', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ draft_state: payloadDraft })
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(reqBody)
         });
         
         const result = await response.json();
@@ -194,11 +293,11 @@ window.loadEntityIntoEditor = async function(name) {
             appendMessage('system', `Loaded '${name}' into the editor.`);
         } else {
             appendMessage('system', 'Error loading entity: ' + data.message);
-            updateStatus(State.IDLE);
+            revertToAppropriateState();
         }
     } catch (err) {
         appendMessage('system', 'Error loading entity: ' + err.message);
-        updateStatus(State.IDLE);
+        revertToAppropriateState();
     }
 };
 

@@ -49,13 +49,26 @@ class LLMClient:
             
         elif self.provider == "ollama":
             messages = []
+            
+            # Inject schema into prompt for Ollama since it lacks strict Structured Outputs API like Gemini
+            if response_schema:
+                schema_dict = response_schema.model_json_schema()
+                import json
+                schema_str = json.dumps(schema_dict, indent=2)
+                schema_instruction = f"\n\nYou MUST return valid JSON. Do not include markdown formatting or conversational text. Your JSON MUST strictly conform to this JSON Schema:\n{schema_str}"
+                
+                if system_instruction:
+                    system_instruction += schema_instruction
+                else:
+                    system_instruction = schema_instruction
+                    
             if system_instruction:
                 messages.append({"role": "system", "content": system_instruction})
             messages.append({"role": "user", "content": prompt})
             
             options = {}
             if response_schema:
-                # Ollama JSON mode (schema constraint is less robust than Gemini, but works for flat models)
+                # Ollama JSON mode
                 options["format"] = "json"
                 
             response = ollama.chat(

@@ -10,8 +10,9 @@ Use flat structures. Do not nest dictionaries.
 """
 
 LINKER_AGENT_PROMPT = """You are the Linker Agent.
-Your job is to review the drafted entity text and insert [[wikilinks]] for any names or locations that exist in the database.
-Do not change any facts, only add brackets around known entities.
+    Your job is to review the drafted entity text and insert [[wikilinks]] for any names, locations, species, factions, items, or other entities that exist in the database.
+    Do not change any facts. Only add brackets around known entities.
+    IMPORTANT: If the draft text already contains [[wikilinks]], DO NOT remove them, even if the entity does not exist in the database. Preserve all existing [[wikilinks]].
 """
 
 TRUTH_KEEPER_PROMPT = """You are the Truth Keeper.

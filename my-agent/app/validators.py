@@ -59,7 +59,12 @@ def validate_entity_data(data: Dict[str, Any]) -> tuple[bool, Dict[str, Any], st
     try:
         # First attempt: strict validation
         instance = model_class(**data)
-        return True, instance.model_dump(), ""
+        cleaned = instance.model_dump()
+        if "content" in data:
+            cleaned["content"] = data["content"]
+        if "raw_markdown" in data:
+            cleaned["raw_markdown"] = data["raw_markdown"]
+        return True, cleaned, ""
     except ValidationError as e:
         # Apply Static Fuzzy Enum Mapper for known Literals
         # We manually map the known Literals from Phase 0 to ensure high reliability
@@ -70,6 +75,19 @@ def validate_entity_data(data: Dict[str, Any]) -> tuple[bool, Dict[str, Any], st
                 continue
             field_name = loc[0]
             
+            # If Pydantic expected a list but received a string (like a comma-separated list from the UI)
+            if error.get("type") == "list_type" and isinstance(data.get(field_name), str):
+                val_str = data[field_name]
+                if val_str.strip() == "":
+                    data[field_name] = []
+                else:
+                    data[field_name] = [s.strip() for s in val_str.split(',')]
+                    
+            # If Pydantic expected a string but received a list (like the LLM outputting ["Elves"] instead of "Elves")
+            if error.get("type") == "string_type" and isinstance(data.get(field_name), list):
+                val_list = data[field_name]
+                data[field_name] = ", ".join([str(i) for i in val_list])
+            
             if field_name == "status" and entity_type == "Character":
                 bad_val = data.get("status", "")
                 data["status"] = fuzzy_match_enum(str(bad_val), ["Alive", "Deceased", "Unknown"])
@@ -77,7 +95,12 @@ def validate_entity_data(data: Dict[str, Any]) -> tuple[bool, Dict[str, Any], st
         # Second attempt after fuzzy correction
         try:
             instance = model_class(**data)
-            return True, instance.model_dump(), "Data was fuzzy corrected."
+            cleaned = instance.model_dump()
+            if "content" in data:
+                cleaned["content"] = data["content"]
+            if "raw_markdown" in data:
+                cleaned["raw_markdown"] = data["raw_markdown"]
+            return True, cleaned, "Data was fuzzy corrected."
         except ValidationError as e2:
             # If it still fails, it's a hard error (e.g. expected string got dict due to LLM nesting)
             # In our Flat Model Rule, nested dicts are illegal.
@@ -92,6 +115,11 @@ def validate_entity_data(data: Dict[str, Any]) -> tuple[bool, Dict[str, Any], st
             # Third attempt after aggressive flattening
             try:
                 instance = model_class(**data)
-                return True, instance.model_dump(), "Data was aggressively flattened and fuzzy corrected."
+                cleaned = instance.model_dump()
+                if "content" in data:
+                    cleaned["content"] = data["content"]
+                if "raw_markdown" in data:
+                    cleaned["raw_markdown"] = data["raw_markdown"]
+                return True, cleaned, "Data was aggressively flattened and fuzzy corrected."
             except ValidationError as e3:
                 return False, data, str(e3)

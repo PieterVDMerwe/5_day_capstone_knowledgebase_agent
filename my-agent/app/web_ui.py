@@ -1146,7 +1146,7 @@ name: "Locations/The Rusty Anvil"       => Saves to: [Vault Path]/Locations/The 
 ---
 name: "Eldrin the Wise"
 type: "character"
-species: "human" # human | elf | dwarf | unknown | etc. (determines lifespan limit)
+species: "[[human]]" # Must link to Species note if it exists, or just the name
 summary: "An old wizard."
 status: "active" # active | deceased | unknown
 location: "Oakhaven Town" # Must link to Location note, or "unknown"

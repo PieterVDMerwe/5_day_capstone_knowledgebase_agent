@@ -44,6 +44,27 @@ def extract_wiki_links(body: str) -> list[str]:
             links.append(target)
     return links
 
+def extract_all_wiki_links(draft: dict) -> list[str]:
+    """Finds all standard wiki links across the body and all string metadata fields."""
+    links = set()
+    
+    # Check body
+    if "content" in draft and isinstance(draft["content"], str):
+        links.update(extract_wiki_links(draft["content"]))
+        
+    # Check metadata fields
+    for key, val in draft.items():
+        if key in ("content", "raw_markdown"):
+            continue
+        if isinstance(val, str):
+            links.update(extract_wiki_links(val))
+        elif isinstance(val, list):
+            for item in val:
+                if isinstance(item, str):
+                    links.update(extract_wiki_links(item))
+                    
+    return list(links)
+
 def parse_markdown_file(filepath: str) -> dict[str, Any]:
     filename = os.path.basename(filepath)
     entity_name = filename[:-3] if filename.endswith(".md") else filename
