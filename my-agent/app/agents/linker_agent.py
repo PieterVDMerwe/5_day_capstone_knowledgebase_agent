@@ -1,24 +1,40 @@
-from ..llm_client import LLMClient
-from ..prompts.system_prompts import LINKER_AGENT_PROMPT
+import re
 from ..database import get_all_entities
 
 class LinkerAgent:
-    """Agent responsible for inserting wikilinks around known entity names in raw text."""
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
+    """Agent responsible for inserting wikilinks deterministically."""
+    def __init__(self, llm_client=None):
+        pass
 
     def insert_links(self, draft_text: str) -> str:
-        # Get all known entity names to give the LLM as context
         entities = get_all_entities()
-        known_entities_info = []
+        
+        link_map = {}
         for e in entities:
             name = e["name"]
+            link_map[name] = f"[[{name}]]"
             aliases = e.get("metadata", {}).get("aliases", [])
-            if aliases and isinstance(aliases, list):
-                aliases_str = "/".join(aliases)
-                known_entities_info.append(f"{name} (Aliases: {aliases_str})")
-            else:
-                known_entities_info.append(name)
-                
-        prompt = f"Known Entities: {', '.join(known_entities_info)}\n\nDraft Text:\n{draft_text}"
-        return self.llm.generate(prompt=prompt, system_instruction=LINKER_AGENT_PROMPT)
+            if isinstance(aliases, list):
+                for alias in aliases:
+                    alias_stripped = alias.strip()
+                    if alias_stripped and alias_stripped.lower() != name.lower():
+                        link_map[alias_stripped] = f"[[{name}|{alias_stripped}]]"
+                        
+        sorted_terms = sorted(link_map.keys(), key=len, reverse=True)
+        
+        existing_links = []
+        def mask_link(match):
+            existing_links.append(match.group(0))
+            return f"__WIKILINK_{len(existing_links) - 1}__"
+            
+        masked_text = re.sub(r'\[\[.*?\]\]', mask_link, draft_text)
+        
+        for term in sorted_terms:
+            escaped_term = re.escape(term)
+            pattern = rf"\b{escaped_term}\b"
+            masked_text = re.sub(pattern, link_map[term], masked_text, flags=re.IGNORECASE)
+            
+        for i, link in enumerate(existing_links):
+            masked_text = masked_text.replace(f"__WIKILINK_{i}__", link)
+            
+        return masked_text

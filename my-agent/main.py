@@ -80,7 +80,32 @@ async def chat_endpoint(req: ChatRequest):
             elif "event" in low_msg: entity_type = "Event"
             elif "species" in low_msg: entity_type = "Species"
             
-            draft = editor_agent.draft_entity(req.user_message, entity_type=entity_type)
+            import re
+            from app.context_tools import get_entity_graph
+            from app.database import get_db_connection
+            
+            # Fetch context for mentioned capitalized words
+            context_graph = ""
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM entities")
+            known_entities = {row["name"] for row in cursor.fetchall()}
+            conn.close()
+            
+            words = set(re.findall(r'\b[A-Z][a-z]*\b', req.user_message))
+            found_contexts = []
+            for w in words:
+                if w in known_entities:
+                    found_contexts.append(get_entity_graph(w))
+            if found_contexts:
+                context_graph = "\n\n".join(found_contexts)
+                
+            draft = editor_agent.draft_entity(
+                req.user_message, 
+                entity_type=entity_type,
+                current_draft=req.draft_state,
+                context_graph=context_graph
+            )
             
             msg = "Draft generated successfully."
             status = "success"
@@ -141,9 +166,8 @@ async def save_endpoint(req: SaveRequest):
         name = draft.get("name", "Unknown")
         
         # 1. Truth Keeper validation
-        related = []
-        if "faction_affiliations" in draft and isinstance(draft["faction_affiliations"], list):
-            related.extend(draft["faction_affiliations"])
+        from app.parser import extract_all_wiki_links
+        related = extract_all_wiki_links(draft)
             
         logic_report = truth_keeper.validate_logic(draft, related_entities=related)
         if "valid" not in logic_report.lower() and "no" not in logic_report.lower():

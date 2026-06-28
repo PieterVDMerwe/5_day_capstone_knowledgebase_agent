@@ -8,12 +8,16 @@ class EditorAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm = llm_client
 
-    def draft_entity(self, request: str, entity_type: str) -> dict:
+    def draft_entity(self, request: str, entity_type: str, current_draft: dict = None, context_graph: str = "") -> dict:
         if entity_type not in MODEL_MAP:
             entity_type = "General"
             
         model_class = MODEL_MAP[entity_type]
-        prompt = f"Draft an entity of type {entity_type} based on this request: {request}"
+        prompt = f"Request: {request}\n"
+        if context_graph:
+            prompt += f"\nWorld Context:\n{context_graph}\n"
+        if current_draft:
+            prompt += f"\nCurrent Draft to modify:\n{json.dumps(current_draft, indent=2)}\n"
         
         # Enforce Pydantic schema constraints directly via LLM config (if supported by provider)
         raw_json_str = self.llm.generate(
