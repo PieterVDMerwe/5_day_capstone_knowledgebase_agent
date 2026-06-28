@@ -58,15 +58,15 @@ async function loadGraph() {
         // Map groups to colors safely
         const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-        // Map groups to Material Symbols
+        // Map groups to Material Symbols (using Unicode codepoints for SVG compatibility)
         const iconMap = {
-            "Character": "person",
-            "Location": "castle",
-            "Item": "swords",
-            "Faction": "shield",
-            "Event": "local_fire_department",
-            "Species": "pets",
-            "General": "description"
+            "Character": "\uE7FD", // person
+            "Location": "\uEAB1",  // castle
+            "Item": "\uF889",      // swords
+            "Faction": "\uE9E0",   // shield
+            "Event": "\uEF55",     // local_fire_department
+            "Species": "\uE91D",   // pets
+            "General": "\uE873"    // description
         };
 
         // Draw Node Groups
@@ -79,7 +79,7 @@ async function loadGraph() {
         // Silhouette Icon (Material Symbol as the only shape)
         node.append("text")
             .attr("class", "material-symbols-outlined")
-            .text(d => iconMap[d.group] || "description")
+            .text(d => iconMap[d.group] || "\uE873")
             .attr("font-size", "28px")
             .attr("fill", d => d.is_empty ? "#888888" : "var(--accent)")
             .attr("text-anchor", "middle")
