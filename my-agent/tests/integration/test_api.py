@@ -145,3 +145,32 @@ def test_api_wizard_generate_content(mock_llm_client):
     assert data["status"] == "success"
     assert data["data"]["summary"] == "A local faction."
     assert "woodcutters" in data["data"]["content"]
+
+def test_api_delete_entity(mock_llm_client):
+    mock_llm_client.return_value = "Valid"
+    
+    # 1. Save an entity to create the file and DB entry
+    client.post("/api/save", json={
+        "draft_state": {
+            "name": "TargetToDelete",
+            "entity_type": "Character",
+            "summary": "Target"
+        }
+    })
+    
+    assert get_entity("TargetToDelete") is not None
+    
+    # Verify file is created
+    from app.file_writer import VAULT_DIR
+    import os
+    filepath = os.path.join(VAULT_DIR, "TargetToDelete.md")
+    assert os.path.exists(filepath)
+    
+    # 2. Delete it via the API
+    res = client.delete("/api/entity/TargetToDelete")
+    assert res.status_code == 200
+    assert res.json()["status"] == "success"
+    
+    # 3. Verify it is deleted from both DB and file system
+    assert get_entity("TargetToDelete") is None
+    assert not os.path.exists(filepath)
