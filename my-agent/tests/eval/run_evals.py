@@ -122,7 +122,10 @@ def run_evals():
         f.write(report_text)
         
     print(f"Evaluation complete. Report generated at: {artifact_path}")
-    print(report_text)
+    try:
+        print(report_text)
+    except UnicodeEncodeError:
+        print(report_text.encode('ascii', errors='replace').decode('ascii'))
 
 if __name__ == "__main__":
     run_evals()
