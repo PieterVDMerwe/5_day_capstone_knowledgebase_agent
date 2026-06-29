@@ -229,6 +229,117 @@ document.getElementById('delete-modal-confirm')?.addEventListener('click', async
     }
 });
 
+window.saveEntityWithIncomingConnections = async function(payloadDraft, onComplete, onError) {
+    const provider = document.getElementById('llm-provider-select')?.value || 'gemini';
+    const model = document.getElementById('llm-model-input')?.value || 'gemini-2.5-flash';
+    
+    // Check if the entity exists in window.allNodes
+    const exists = window.allNodes && window.allNodes.some(n => n.id === payloadDraft.name);
+    
+    const saveDirectly = async (connectionsToRemove = null) => {
+        const reqBody = {
+            draft_state: payloadDraft,
+            connections_to_remove: connectionsToRemove,
+            provider: provider,
+            model: model
+        };
+        try {
+            const response = await fetch('/api/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(reqBody)
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                if (onComplete) onComplete(result);
+            } else {
+                if (onError) onError(result.message);
+            }
+        } catch (err) {
+            if (onError) onError(err.message);
+        }
+    };
+
+    if (!exists) {
+        await saveDirectly();
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/entity/${encodeURIComponent(payloadDraft.name)}/incoming`);
+        const data = await res.json();
+        if (data.status === 'success' && data.data && data.data.length > 0) {
+            // Show modal
+            const modal = document.getElementById('connections-modal');
+            const listContainer = document.getElementById('connections-list');
+            const nameHeader = document.getElementById('conn-modal-entity-name');
+            
+            nameHeader.innerText = payloadDraft.name;
+            listContainer.innerHTML = '';
+            
+            data.data.forEach(conn => {
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.gap = '8px';
+                
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = true;
+                cb.value = conn.source;
+                cb.id = `conn-${conn.source}`;
+                
+                const label = document.createElement('label');
+                label.htmlFor = `conn-${conn.source}`;
+                label.style.fontSize = '13px';
+                label.style.color = 'var(--text-color)';
+                label.innerHTML = `<strong>${conn.source}</strong> <span style="color:var(--text-muted);font-size:11px;">(${conn.type})</span>`;
+                
+                item.appendChild(cb);
+                item.appendChild(label);
+                listContainer.appendChild(item);
+            });
+            
+            modal.style.display = 'flex';
+            
+            // Setup button handlers
+            const maintainBtn = document.getElementById('conn-maintain-all');
+            const forgetBtn = document.getElementById('conn-forget-all');
+            const cancelBtn = document.getElementById('conn-modal-cancel');
+            const confirmBtn = document.getElementById('conn-modal-confirm');
+            
+            maintainBtn.onclick = () => {
+                listContainer.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = true);
+            };
+            
+            forgetBtn.onclick = () => {
+                listContainer.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+            };
+            
+            cancelBtn.onclick = () => {
+                modal.style.display = 'none';
+                if (onError) onError("Save cancelled by user.");
+            };
+            
+            confirmBtn.onclick = async () => {
+                modal.style.display = 'none';
+                const unchecked = [];
+                listContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
+                    if (!c.checked) {
+                        unchecked.push(c.value);
+                    }
+                });
+                await saveDirectly(unchecked);
+            };
+        } else {
+            await saveDirectly();
+        }
+    } catch (e) {
+        console.error("Failed to check incoming connections, saving directly", e);
+        await saveDirectly();
+    }
+};
+
 document.getElementById('save-btn').addEventListener('click', async () => {
     // Gather all inputs from the form dynamically
     const form = document.getElementById('dynamic-form');
@@ -248,41 +359,24 @@ document.getElementById('save-btn').addEventListener('click', async () => {
         }
     });
 
-    const reqBody = {
-        draft_state: payloadDraft,
-        provider: document.getElementById('llm-provider-select')?.value || 'gemini',
-        model: document.getElementById('llm-model-input')?.value || 'gemini-2.5-flash'
-    };
-    
     appendMessage('system', 'Saving entity to graph...');
     updateStatus(State.GENERATING);
     
-    try {
-        const response = await fetch('/api/save', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(reqBody)
-        });
-        
-        const result = await response.json();
-        
-        if (result.status === 'warning' || result.status === 'error') {
-            appendMessage('system', result.message);
-            updateStatus(State.DRAFT_RECEIVED); // Leave draft open so user can fix issues
-        } else {
+    window.saveEntityWithIncomingConnections(
+        payloadDraft,
+        (result) => {
             appendMessage('system', result.message);
             window.currentDraft = null;
             document.getElementById('dynamic-form').innerHTML = '';
             document.querySelector('.placeholder-text').style.display = 'block';
             updateStatus(State.IDLE);
-            
-            // Reload graph if global function exists
             if (window.loadGraph) window.loadGraph();
+        },
+        (errMessage) => {
+            appendMessage('system', 'Error: ' + errMessage);
+            updateStatus(State.DRAFT_RECEIVED);
         }
-    } catch (err) {
-        appendMessage('system', 'Error saving entity: ' + err.message);
-        updateStatus(State.DRAFT_RECEIVED);
-    }
+    );
 });
 
 // Load Entity from DB into Editor

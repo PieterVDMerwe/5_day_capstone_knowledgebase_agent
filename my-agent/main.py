@@ -50,6 +50,7 @@ class ChatRequest(BaseModel):
 
 class SaveRequest(BaseModel):
     draft_state: Dict[str, Any]
+    connections_to_remove: Optional[List[str]] = None
     provider: Optional[str] = "gemini"
     model: Optional[str] = "gemini-2.5-flash"
 
@@ -175,6 +176,18 @@ async def save_endpoint(req: SaveRequest):
         # 4. Trigger O(1) Sync
         sync_single_file(filepath)
         
+        # Remove selected connections if requested
+        if req.connections_to_remove:
+            from app.database import get_db_connection
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            for source in req.connections_to_remove:
+                cursor.execute("DELETE FROM edges WHERE source_name = ? AND target_name = ?", (source, name))
+                cursor.execute("DELETE FROM memberships WHERE entity_name = ? AND faction_name = ?", (source, name))
+                cursor.execute("DELETE FROM containment WHERE item_name = ? AND location_name = ?", (source, name))
+            conn.commit()
+            conn.close()
+        
         return ApiResponse(
             status="success",
             current_step="Saved and Synced",
@@ -232,6 +245,44 @@ async def get_entity_endpoint(name: str):
         return ApiResponse(status="success", current_step="Entity Fetched", data=draft, message="Loaded entity")
     except Exception as e:
         return ApiResponse(status="error", current_step="Fetch Error", data=None, message=str(e))
+
+@app.get("/api/entity/{name}/incoming", response_model=ApiResponse)
+async def get_incoming_connections(name: str):
+    try:
+        from app.database import get_db_connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Standard wikilinks (edges)
+        cursor.execute("SELECT source_name FROM edges WHERE target_name = ? AND relation_type = 'wikilink'", (name,))
+        edges = [row["source_name"] for row in cursor.fetchall()]
+        
+        # 2. Memberships
+        cursor.execute("SELECT entity_name FROM memberships WHERE faction_name = ?", (name,))
+        memberships = [row["entity_name"] for row in cursor.fetchall()]
+        
+        # 3. Containments
+        cursor.execute("SELECT item_name FROM containment WHERE location_name = ?", (name,))
+        containments = [row["item_name"] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        # Combine and remove duplicates
+        all_incoming = []
+        for src in set(edges + memberships + containments):
+            all_incoming.append({
+                "source": src,
+                "type": "membership" if src in memberships else ("containment" if src in containments else "wikilink")
+            })
+            
+        return ApiResponse(
+            status="success",
+            current_step="Get Incoming Connections",
+            data=all_incoming,
+            message="Retrieved incoming connections successfully."
+        )
+    except Exception as e:
+        return ApiResponse(status="error", current_step="Get Incoming Error", data=None, message=str(e))
 
 @app.delete("/api/entity/{name}", response_model=ApiResponse)
 async def delete_entity_endpoint(name: str):

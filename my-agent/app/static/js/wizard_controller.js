@@ -272,37 +272,20 @@ document.addEventListener("DOMContentLoaded", () => {
             content: content
         };
         
-        const reqBody = {
-            draft_state: finalDraft,
-            provider: document.getElementById('llm-provider-select')?.value || 'gemini',
-            model: document.getElementById('llm-model-input')?.value || 'gemini-2.5-flash'
-        };
-        
-        try {
-            const res = await fetch("/api/save", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(reqBody)
-            });
-            const data = await res.json();
-            
-            if (data.status === "success") {
+        window.saveEntityWithIncomingConnections(
+            finalDraft,
+            async (result) => {
                 closeModal();
-                // Load note into editor
                 if (window.loadEntityIntoEditor) {
                     await window.loadEntityIntoEditor(finalDraft.name);
                 }
-                // Reload graph
                 if (window.loadGraph) window.loadGraph();
-            } else {
-                alert(`Failed to save note: ${data.message}`);
+            },
+            (errMessage) => {
+                alert(`Failed to save note: ${errMessage}`);
                 nextBtn.disabled = false;
                 prevBtn.disabled = false;
             }
-        } catch (e) {
-            alert(`Error saving note: ${e.message}`);
-            nextBtn.disabled = false;
-            prevBtn.disabled = false;
-        }
+        );
     }
 });

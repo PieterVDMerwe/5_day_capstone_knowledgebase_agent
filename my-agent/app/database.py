@@ -105,13 +105,18 @@ def clear_db():
 
 # Basic CRUD Operations
 def insert_entity(name: str, entity_type: str, summary: str, raw_markdown: str, metadata: dict):
-    """Inserts or replaces an entity."""
+    """Inserts or updates an entity (uses ON CONFLICT to avoid cascading delete triggers)."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "INSERT OR REPLACE INTO entities (name, entity_type, summary, raw_markdown, metadata) VALUES (?, ?, ?, ?, ?)",
-        (name, entity_type, summary, raw_markdown, json.dumps(metadata) if metadata else "{}")
-    )
+    cursor.execute("""
+        INSERT INTO entities (name, entity_type, summary, raw_markdown, metadata)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            entity_type=excluded.entity_type,
+            summary=excluded.summary,
+            raw_markdown=excluded.raw_markdown,
+            metadata=excluded.metadata
+    """, (name, entity_type, summary, raw_markdown, json.dumps(metadata) if metadata else "{}"))
     conn.commit()
     conn.close()
 
