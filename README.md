@@ -145,6 +145,18 @@ uv run python seed_vault.py
 ```
 This writes the base markdown files into `Knowledgebase/Obsidian/` and automatically synchronizes the SQLite tables.
 
+### 4. Local Ollama Model Recommendations
+To run the system 100% locally and privately with Ollama, we recommend using models that support strong instruction-following and JSON constraints:
+
+*   **Default model:** `batiai/gemma4-e2b:q4` (optimized for lightweight JSON schema generation).
+*   **Structured Outputs / JSON constraint:** `qwen2.5-coder:7b` or `qwen2.5-coder:1.5b` (exceptional instruction compliance when drafting metadata fields).
+*   **Creative Lore Descriptions:** `llama3.1:8b` or `llama3.2:3b` (great for fluid, thematic fantasy writing).
+*   **Logical Consistency checks:** `deepseek-r1:7b` or `deepseek-r1:8b` (perfect for the `Truth Keeper` reasoning agent to spot timeline and regional contradictions).
+
+**VRAM Hardware Allocation:**
+- **Entry-level (< 8GB VRAM):** Use `1.5B` or `3B` quantized models (e.g. `qwen2.5-coder:1.5b`, `llama3.2:3b`).
+- **Mid-to-High (8GB - 16GB VRAM):** Use `7B` or `8B` quantized models (e.g. `batiai/gemma4-e2b:q4`, `qwen2.5-coder:7b`, `llama3.1:8b`).
+
 ---
 
 ## 5. Testing & Evaluation

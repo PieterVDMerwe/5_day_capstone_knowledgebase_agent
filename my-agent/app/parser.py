@@ -191,15 +191,47 @@ def scan_and_sync_vault(vault_path: str):
     # Pass 2: Insert relationships
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # Pass 1.5: Identify missing links (stubs)
+    cursor.execute("SELECT name FROM entities")
+    known_entities = {row["name"] for row in cursor.fetchall()}
+    
+    all_extracted_links = set()
+    for parsed in parsed_files:
+        all_extracted_links.update(parsed["links"])
+        
+    from app.file_writer import write_entity_to_vault
+    for link in all_extracted_links:
+        if link.startswith("[["):
+            continue
+        if link not in known_entities:
+            stub_draft = {
+                "name": link,
+                "entity_type": "General",
+                "is_empty": True,
+                "summary": f"Auto-generated empty stub for {link}."
+            }
+            stub_filepath = write_entity_to_vault(stub_draft)
+            try:
+                parsed_stub = parse_markdown_file(stub_filepath)
+                insert_entity(
+                    name=parsed_stub["name"],
+                    entity_type=parsed_stub["entity_type"],
+                    summary=parsed_stub["summary"],
+                    raw_markdown=parsed_stub["raw_markdown"],
+                    metadata=parsed_stub["metadata"]
+                )
+                insert_name_index(parsed_stub["name"], jellyfish.match_rating_codex(parsed_stub["name"]))
+                parsed_files.append(parsed_stub)
+                known_entities.add(link)
+            except Exception as e:
+                print(f"Error parsing stub {stub_filepath}: {e}")
+    
     # Clear all relations
     cursor.execute("DELETE FROM edges")
     cursor.execute("DELETE FROM memberships")
     cursor.execute("DELETE FROM containment")
     cursor.execute("DELETE FROM genealogy")
-    
-    # We only insert edges if the target entity exists in DB
-    cursor.execute("SELECT name FROM entities")
-    known_entities = {row["name"] for row in cursor.fetchall()}
     
     for parsed in parsed_files:
         name = parsed["name"]
