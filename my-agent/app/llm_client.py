@@ -9,6 +9,30 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+class SecurityException(ValueError):
+    """Raised when an adversarial prompt injection pattern is detected."""
+    pass
+
+INJECTION_PATTERNS = [
+    r"ignore\s+(?:all\s+)?(?:previous|above)\s+instructions",
+    r"system\s+override",
+    r"override\s+system\s+instructions",
+    r"you\s+are\s+now\s+a",
+    r"forget\s+(?:your\s+)?previous\s+system",
+    r"disregard\s+(?:all\s+)?instructions",
+    r"new\s+system\s+prompt",
+    r"stop\s+following\s+instructions"
+]
+
+def check_prompt_injection(prompt: str) -> None:
+    """Statically scans prompt for common adversarial injection patterns."""
+    if not prompt:
+        return
+    import re
+    for pattern in INJECTION_PATTERNS:
+        if re.search(pattern, prompt, re.IGNORECASE):
+            raise SecurityException("Adversarial prompt injection pattern detected. Request blocked.")
+
 class LLMClient:
     """
     Centralized LLM Client managing Gemini and Ollama API calls.
@@ -31,6 +55,8 @@ class LLMClient:
         Generates content from the LLM. 
         If response_schema is provided (a Pydantic model), the output is constrained to JSON.
         """
+        check_prompt_injection(prompt)
+        
         if self.provider == "gemini":
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,

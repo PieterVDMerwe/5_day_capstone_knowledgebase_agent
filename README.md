@@ -61,6 +61,11 @@ SQLite's `INSERT OR REPLACE` deletes existing rows before inserting, which trigg
 - **Incoming connections review modal:** Saving a note that is referenced by other notes prompts a checklist overlay. You can choose which incoming links to maintain or forget in the database, with handy "Maintain All" and "Forget All" buttons.
 - *Controls:* Handled via `/api/entity/{name}/incoming` in [main.py](file:///e:/Projects/5_day_capstone_knowledgebase_agent/my-agent/main.py) and rendered in [ui_state.js](file:///e:/Projects/5_day_capstone_knowledgebase_agent/my-agent/app/static/js/ui_state.js).
 
+### 6. Prompt Injection Sanitization & Security
+To ensure application safety and prevent adversarial prompt manipulation:
+- **Scanner:** `LLMClient.generate` in [app/llm_client.py](file:///e:/Projects/5_day_capstone_knowledgebase_agent/my-agent/app/llm_client.py) runs `check_prompt_injection` to scan prompts against common injection regex patterns (e.g. `ignore all previous instructions`, `system override`).
+- **Error Handling:** If an injection pattern is detected, it raises `SecurityException`. The API endpoints catch this exception and return a clean, non-blocking HTTP error response envelope instead of crashing or hanging.
+
 ---
 
 ## 3. Directory Map
@@ -101,6 +106,7 @@ my-agent/
 │   └── unit/
 │       ├── test_database.py     # SQLite operations unit tests
 │       ├── test_parser.py       # Frontmatter & wikilinks unit tests
+│       ├── test_security.py     # Prompt injection unit tests
 │       ├── test_validators.py   # Spelling corrections & wrap checks
 │       └── test_wizard.py       # Seed generator unit tests
 ├── main.py                      # FastAPI server routes, lifespans, API entry
