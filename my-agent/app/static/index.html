@@ -14,11 +14,19 @@
         <strong style="color: var(--text-color); font-size: 16px;">Lore Vault Studio</strong>
         <div id="llm-settings" style="display: flex; align-items: center; gap: 10px;">
             <select id="llm-provider-select" style="padding: 2px 5px; font-size: 12px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--border); border-radius: 4px;">
+                <option value="ollama" selected>Ollama</option>
                 <option value="gemini">Gemini</option>
-                <option value="ollama">Ollama</option>
             </select>
             <select id="llm-model-input" style="padding: 2px 5px; font-size: 12px; width: 180px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--border); border-radius: 4px;">
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="batiai/gemma4-e2b:q4" selected>batiai/gemma4-e2b:q4</option>
+                <option value="gemma4-e2b:latest">gemma4-e2b:latest</option>
+                <option value="qwen3:4b">qwen3:4b</option>
+                <option value="gemma4:12b">gemma4:12b</option>
+                <option value="hf.co/featherless-ai-quants/AstroMLab-AstroSage-8B-GGUF:Q4_K_M">hf.co/featherless-ai-quants/AstroMLab-AstroSage-8B-GGUF:Q4_K_M</option>
+                <option value="sciphi/triplex:latest">sciphi/triplex:latest</option>
+                <option value="phi4-mini:latest">phi4-mini:latest</option>
+                <option value="deepseek-r1:7b">deepseek-r1:7b</option>
+                <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
             </select>
         </div>
         <div class="view-toggles">

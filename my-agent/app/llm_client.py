@@ -14,7 +14,7 @@ class LLMClient:
     Centralized LLM Client managing Gemini and Ollama API calls.
     Used by all agents to ensure consistent configuration and mocking potential.
     """
-    def __init__(self, provider: str = "gemini", model_name: str = None):
+    def __init__(self, provider: str = "ollama", model_name: str = None):
         self.provider = provider
         if provider == "gemini":
             if not GEMINI_API_KEY:
@@ -22,7 +22,7 @@ class LLMClient:
             self.gemini_client = genai.Client(api_key=GEMINI_API_KEY)
             self.model_name = model_name or "gemini-2.5-flash"
         elif provider == "ollama":
-            self.model_name = model_name or "llama3.2" # Recommended fast local model
+            self.model_name = model_name or "batiai/gemma4-e2b:q4"
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
 

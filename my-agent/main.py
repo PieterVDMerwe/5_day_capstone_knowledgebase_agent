@@ -45,23 +45,23 @@ class ChatRequest(BaseModel):
     chat_mode: Optional[str] = "lore_base" # "lore_base" or "direct_llm"
     draft_state: Optional[Dict[str, Any]] = None
     chat_history: Optional[List[Dict[str, str]]] = None
-    provider: Optional[str] = "gemini"
-    model: Optional[str] = "gemini-2.5-flash"
+    provider: Optional[str] = "ollama"
+    model: Optional[str] = "batiai/gemma4-e2b:q4"
 
 class SaveRequest(BaseModel):
     draft_state: Dict[str, Any]
     connections_to_remove: Optional[List[str]] = None
-    provider: Optional[str] = "gemini"
-    model: Optional[str] = "gemini-2.5-flash"
+    provider: Optional[str] = "ollama"
+    model: Optional[str] = "batiai/gemma4-e2b:q4"
 
 class WizardContentRequest(BaseModel):
     draft_state: Dict[str, Any]
     instruction: Optional[str] = ""
-    provider: Optional[str] = "gemini"
-    model: Optional[str] = "gemini-2.5-flash"
+    provider: Optional[str] = "ollama"
+    model: Optional[str] = "batiai/gemma4-e2b:q4"
 
 # Initialize LLM and Agents
-llm_client = LLMClient(provider="gemini")
+llm_client = LLMClient(provider="ollama", model_name="batiai/gemma4-e2b:q4")
 orchestrator = Orchestrator(llm_client)
 lore_seeker = LoreSeeker(llm_client)
 editor_agent = EditorAgent(llm_client)
