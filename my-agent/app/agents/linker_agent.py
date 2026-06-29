@@ -12,6 +12,9 @@ class LinkerAgent:
         link_map = {}
         for e in entities:
             name = e["name"]
+            # Exclude duplicate stubs or invalid names starting with [[
+            if name.startswith("[["):
+                continue
             link_map[name] = f"[[{name}]]"
             aliases = e.get("metadata", {}).get("aliases", [])
             if isinstance(aliases, list):
@@ -32,7 +35,13 @@ class LinkerAgent:
         for term in sorted_terms:
             escaped_term = re.escape(term)
             pattern = rf"\b{escaped_term}\b"
-            masked_text = re.sub(pattern, link_map[term], masked_text, flags=re.IGNORECASE)
+            
+            def replace_term(match):
+                link_val = link_map[term]
+                existing_links.append(link_val)
+                return f"__WIKILINK_{len(existing_links) - 1}__"
+                
+            masked_text = re.sub(pattern, replace_term, masked_text, flags=re.IGNORECASE)
             
         for i, link in enumerate(existing_links):
             masked_text = masked_text.replace(f"__WIKILINK_{i}__", link)

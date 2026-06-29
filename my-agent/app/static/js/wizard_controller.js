@@ -64,6 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     
     nextBtn?.addEventListener("click", async () => {
+        console.log("Wizard nextBtn clicked, currentStep =", currentStep);
         if (currentStep === 1) {
             currentStep = 2;
             showStep(2);
@@ -82,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showStep(4);
         } else if (currentStep === 4) {
             // Save draft to DB/Vault
+            console.log("Saving draft from wizard Step 4...");
             await createNote();
         }
     });
@@ -277,6 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     async function createNote() {
+        console.log("createNote called. Disabling buttons...");
         nextBtn.disabled = true;
         prevBtn.disabled = true;
         
@@ -289,9 +292,11 @@ document.addEventListener("DOMContentLoaded", () => {
             content: content
         };
         
+        console.log("Calling saveEntityWithIncomingConnections for:", finalDraft.name);
         window.saveEntityWithIncomingConnections(
             finalDraft,
             async (result) => {
+                console.log("saveEntityWithIncomingConnections success callback triggered. Closing modal...");
                 closeModal();
                 if (window.loadEntityIntoEditor) {
                     await window.loadEntityIntoEditor(finalDraft.name);
@@ -299,6 +304,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (window.loadGraph) window.loadGraph();
             },
             (errMessage) => {
+                console.error("saveEntityWithIncomingConnections error callback triggered:", errMessage);
                 alert(`Failed to save note: ${errMessage}`);
                 nextBtn.disabled = false;
                 prevBtn.disabled = false;
