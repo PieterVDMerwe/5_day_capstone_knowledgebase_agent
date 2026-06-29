@@ -18,12 +18,16 @@
 6. **Save Connections Maintenance Dialog (`index.html`, `ui_state.js`, `wizard_controller.js`)**:
    - Created `GET /api/entity/{name}/incoming` to fetch all links, memberships, and containment relations referencing the entity.
    - Added a modal checklist on Save (both from Editor and Step 4 Wizard) prompting the user to maintain or forget incoming connections, with "Maintain All" and "Forget All" options.
+7. **Stub Completion Wizard (`index.html`, `ui_state.js`, `wizard_controller.js`)**:
+   - Added a `⚡ Complete with Wizard` button to the Editor header actions that appears exclusively when an empty stub note is loaded.
+   - Click to open the stepper wizard pre-seeded with the stub's name, overriding the random name generators in Step 2 while providing procedural seed generation for the rest of the fields.
 
 ### How it works:
 - Click the green **+ New Note** button in the Editor actions.
 - Walk through the stepper modal to create a note using seeded/procedural fields, generate content via the LLM, and save.
 - Toggle between "Lore Base" and "Direct LLM" in the chat panel to query the database vs. prompt the model directly.
 - Saving an existing note with incoming connections will trigger a review popup allowing selective link retention/removal. Incoming links are preserved by default without breaking.
+- Loading an empty stub note displays a `⚡ Complete with Wizard` button. Clicking it starts the wizard pre-populated with that stub's name.
 
 ### Next Phase Requires:
 - **Phase 6: Supporting Skills Development**

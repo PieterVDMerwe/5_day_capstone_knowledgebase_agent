@@ -19,6 +19,19 @@ document.addEventListener("DOMContentLoaded", () => {
         currentStep = 1;
         selectedType = null;
         wizardDraft = null;
+        window.stubCompletionName = null;
+        typeButtons.forEach(btn => btn.classList.remove("selected"));
+        
+        showStep(1);
+        modal.style.display = "flex";
+    });
+
+    const completeStubBtn = document.getElementById("wizard-complete-stub-btn");
+    completeStubBtn?.addEventListener("click", () => {
+        currentStep = 1;
+        selectedType = null;
+        wizardDraft = null;
+        window.stubCompletionName = window.currentDraft ? window.currentDraft.name : null;
         typeButtons.forEach(btn => btn.classList.remove("selected"));
         
         showStep(1);
@@ -28,6 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Close Modal
     const closeModal = () => {
         modal.style.display = "none";
+        window.stubCompletionName = null;
     };
     closeBtn?.addEventListener("click", closeModal);
     
@@ -121,6 +135,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             if (data.status === "success") {
                 wizardDraft = data.data;
+                if (window.stubCompletionName) {
+                    wizardDraft.name = window.stubCompletionName;
+                }
                 renderWizardForm(wizardDraft, fieldsForm);
             } else {
                 fieldsForm.innerHTML = `<p style="color:var(--error);">Failed to generate suggestions: ${data.message}</p>`;

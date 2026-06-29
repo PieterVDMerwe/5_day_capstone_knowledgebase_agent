@@ -55,6 +55,15 @@ function updateStatus(state) {
         sendBtn.disabled = true;
         input.disabled = true;
     }
+
+    const completeStubBtn = document.getElementById('wizard-complete-stub-btn');
+    if (completeStubBtn) {
+        if (state === State.DRAFT_RECEIVED && window.currentDraft && window.currentDraft.is_empty) {
+            completeStubBtn.style.display = 'inline-block';
+        } else {
+            completeStubBtn.style.display = 'none';
+        }
+    }
 }
 
 function appendMessage(sender, text) {

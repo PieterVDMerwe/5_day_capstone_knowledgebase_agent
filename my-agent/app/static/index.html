@@ -54,8 +54,9 @@
         <section id="editor-panel" style="flex: 1 1 auto; min-width: 300px;">
             <div id="editor-header">
                 <h2>Entity Editor</h2>
-                <div class="actions" style="display: flex; align-items: center;">
-                    <button id="new-note-btn" style="background-color: var(--success); color: white; margin-right: 15px;">+ New Note</button>
+                <div class="actions" style="display: flex; align-items: center; gap: 10px;">
+                    <button id="new-note-btn" class="btn" style="background-color: var(--success-color); color: white;">+ New Note</button>
+                    <button id="wizard-complete-stub-btn" class="btn" style="display: none; background: var(--accent); color: white;">⚡ Complete with Wizard</button>
                     <button id="save-btn" disabled>Save to Vault</button>
                     <button id="discard-btn" disabled>Discard</button>
                     <button id="delete-btn" disabled style="background-color: var(--danger-color, #d32f2f); color: white; margin-left: 10px;">Delete</button>
