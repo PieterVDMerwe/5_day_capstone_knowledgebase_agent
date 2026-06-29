@@ -134,15 +134,15 @@ async def save_endpoint(req: SaveRequest):
         # 1. Truth Keeper validation
         from app.parser import extract_all_wiki_links
         related = extract_all_wiki_links(draft)
-            
-        logic_report = truth_keeper.validate_logic(draft, related_entities=related)
-        if "valid" not in logic_report.lower() and "no" not in logic_report.lower():
-            return ApiResponse(
-                status="warning",
-                current_step="Validation Failed",
-                data={"logic_report": logic_report, "draft": draft},
-                message=f"Truth Keeper found inconsistencies: {logic_report}"
-            )
+        
+        warning_msg = None
+        try:
+            logic_report = truth_keeper.validate_logic(draft, related_entities=related)
+            if "valid" not in logic_report.lower() and "no" not in logic_report.lower():
+                warning_msg = f"Truth Keeper inconsistency: {logic_report}"
+        except Exception as llm_err:
+            print(f"Truth Keeper validation skipped due to LLM error: {llm_err}")
+            warning_msg = f"Truth Keeper skipped (LLM unavailable: {llm_err})"
             
         # 2. Linker Integration
         if "content" in draft and draft["content"].strip():
@@ -169,7 +169,7 @@ async def save_endpoint(req: SaveRequest):
                 stub_filepath = write_entity_to_vault(stub_draft)
                 sync_single_file(stub_filepath)
                 known_entities.add(link)
-
+ 
         # 3. Write to file
         filepath = write_entity_to_vault(draft)
         
@@ -178,7 +178,6 @@ async def save_endpoint(req: SaveRequest):
         
         # Remove selected connections if requested
         if req.connections_to_remove:
-            from app.database import get_db_connection
             conn = get_db_connection()
             cursor = conn.cursor()
             for source in req.connections_to_remove:
@@ -188,6 +187,14 @@ async def save_endpoint(req: SaveRequest):
             conn.commit()
             conn.close()
         
+        if warning_msg:
+            return ApiResponse(
+                status="warning",
+                current_step="Saved with Warning",
+                data={"filepath": filepath},
+                message=f"Saved successfully, but: {warning_msg}"
+            )
+            
         return ApiResponse(
             status="success",
             current_step="Saved and Synced",

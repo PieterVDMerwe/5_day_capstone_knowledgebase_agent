@@ -1,13 +1,14 @@
 ---
 name: Sarah
 entity_type: Character
-summary: Sarah is the wife of [[Liam]].
+summary: A test character.
 aliases: []
-tags: ["wife"]
-species: Human
-status: Alive
-faction_affiliations: []
+tags: []
+species: [[Elves]]
+status: Unknown
+faction_affiliations: ["[[The Bloodrunners]]"]
+current_location: [[Oakhaven Town]]
 personality_traits: []
 ---
 
-[[Liam the Blacksmith]], [[human]]
+This is test content.

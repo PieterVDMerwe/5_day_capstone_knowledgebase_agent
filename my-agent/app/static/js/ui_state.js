@@ -250,7 +250,7 @@ window.saveEntityWithIncomingConnections = async function(payloadDraft, onComple
                 body: JSON.stringify(reqBody)
             });
             const result = await response.json();
-            if (result.status === 'success') {
+            if (result.status === 'success' || result.status === 'warning') {
                 if (onComplete) onComplete(result);
             } else {
                 if (onError) onError(result.message);
