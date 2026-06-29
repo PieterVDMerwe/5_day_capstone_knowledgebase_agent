@@ -21,7 +21,9 @@ INJECTION_PATTERNS = [
     r"forget\s+(?:your\s+)?previous\s+system",
     r"disregard\s+(?:all\s+)?instructions",
     r"new\s+system\s+prompt",
-    r"stop\s+following\s+instructions"
+    r"stop\s+following\s+instructions",
+    r"(?:print|output|reveal|show|display).*(?:system|initial|developer|original).*(?:prompt|instruction)",
+    r"word-for-word.*(?:initial|system|developer|original|prompt|instruction)"
 ]
 
 def check_prompt_injection(prompt: str) -> None:
@@ -58,6 +60,11 @@ class LLMClient:
         check_prompt_injection(prompt)
         
         if self.provider == "gemini":
+            if not hasattr(self, 'gemini_client') or self.gemini_client is None:
+                if not GEMINI_API_KEY:
+                    raise ValueError("GEMINI_API_KEY not found in environment. Check your .env file.")
+                self.gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+                
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.2, # Low temperature for more deterministic/structured lore
