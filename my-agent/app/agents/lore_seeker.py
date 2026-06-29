@@ -11,6 +11,16 @@ class LoreSeeker:
         context = ""
         if context_entity:
             context = get_entity_graph(context_entity)
+        else:
+            # Fallback: scan query for mentioned entity names in the DB to build relevant context
+            from ..database import get_all_entities
+            try:
+                entities = get_all_entities()
+                for ent in entities:
+                    if ent["name"].lower() in query.lower():
+                        context += get_entity_graph(ent["name"]) + "\n"
+            except Exception:
+                pass
             
         prompt = f"Context:\n{context}\n\nUser Query: {query}"
         return self.llm.generate(prompt=prompt, system_instruction=LORE_SEEKER_PROMPT)

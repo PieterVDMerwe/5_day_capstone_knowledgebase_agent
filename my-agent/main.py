@@ -295,14 +295,14 @@ async def get_incoming_connections(name: str):
 async def delete_entity_endpoint(name: str):
     try:
         from app.database import delete_entity
+        from app.file_writer import VAULT_DIR
         import os
         
         # Delete from DB
         delete_entity(name)
         
         # Delete file
-        vault_dir = r"E:\Projects\5_day_capstone_knowledgebase_agent\Knowledgebase\Obsidian"
-        file_path = os.path.join(vault_dir, f"{name}.md")
+        file_path = os.path.join(VAULT_DIR, f"{name}.md")
         if os.path.exists(file_path):
             os.remove(file_path)
             

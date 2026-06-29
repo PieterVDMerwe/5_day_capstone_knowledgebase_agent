@@ -45,6 +45,9 @@ def get_random_all_entities(limit: int = 3) -> List[str]:
 
 def generate_suggested_fields(entity_type: str) -> Dict[str, Any]:
     """Generates suggested fields for the given entity type."""
+    if entity_type not in ("Character", "Location", "Item", "Faction", "Event", "Species", "General"):
+        raise ValueError(f"Unknown entity type: {entity_type}")
+        
     first_name = random.choice(FANTASY_FIRST_NAMES)
     last_name = random.choice(FANTASY_LAST_NAMES)
     name = f"{first_name} {last_name}"
