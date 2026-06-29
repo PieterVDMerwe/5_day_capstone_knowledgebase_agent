@@ -1,13 +1,7 @@
 ---
-name: Elves
-entity_type: Species
-summary: A long-lived, magically attuned race of humanoids.
-aliases: ["The Firstborn", "Elf"]
-tags: ["species", "fey"]
-lifespan: 1000 years
-native_habitat: The Whispering Woods
-average_height: 6 feet
-distinctive_features: ["Pointed ears", "Glowing eyes", "Slender build"]
+name: [Elves
+entity_type: General
+is_empty: True
+summary: Auto-generated empty stub for [Elves.
 ---
 
-The [[Elves]] are a proud race, many of whom died during [[The Great Sundering]]. They are rarely seen in human settlements like [[Oakhaven Town]].

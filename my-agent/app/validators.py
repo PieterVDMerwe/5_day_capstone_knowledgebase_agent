@@ -14,6 +14,46 @@ MODEL_MAP = {
     "General": models.GeneralLoreModel
 }
 
+RELATIONSHIP_FIELDS = {
+    "Character": ["species", "faction_affiliations", "current_location"],
+    "Location": ["region", "controlling_faction"],
+    "Item": ["creator", "current_owner"],
+    "Faction": ["leader", "headquarters", "allies", "enemies"],
+    "Event": ["participants", "locations_involved"],
+    "Species": ["native_habitat"],
+    "General": ["related_entities"]
+}
+
+def wrap_in_wikilink(val: str) -> str:
+    val = val.strip()
+    if not val:
+        return val
+    # Strip any malformed brackets (e.g. [[Oakhaven Town] or [Oakhaven Town])
+    while val.startswith("["):
+        val = val[1:]
+    while val.endswith("]"):
+        val = val[:-1]
+    val = val.strip()
+    if not val:
+        return ""
+    return f"[[{val}]]"
+
+def ensure_wikilinks_in_metadata(draft: Dict[str, Any]) -> Dict[str, Any]:
+    entity_type = draft.get("entity_type")
+    if not entity_type or entity_type not in RELATIONSHIP_FIELDS:
+        return draft
+        
+    fields = RELATIONSHIP_FIELDS[entity_type]
+    for field in fields:
+        if field in draft:
+            val = draft[field]
+            if isinstance(val, str) and val.strip():
+                draft[field] = wrap_in_wikilink(val)
+            elif isinstance(val, list):
+                draft[field] = [wrap_in_wikilink(item) for item in val if isinstance(item, str) and item.strip()]
+                
+    return draft
+
 def fuzzy_match_enum(value: str, options: list[str]) -> str:
     """
     Finds the closest match for a string within a list of options using Jaro-Winkler.
@@ -47,6 +87,9 @@ def validate_entity_data(data: Dict[str, Any]) -> tuple[bool, Dict[str, Any], st
     Applies the Static Fuzzy Enum Mapper to automatically correct minor deviations.
     Returns (is_valid, cleaned_data, error_message).
     """
+    # Enforce strict wikilinks on relationship fields
+    data = ensure_wikilinks_in_metadata(data)
+    
     entity_type = data.get("entity_type")
     
     # Fuzzy match entity type first if it's slightly off

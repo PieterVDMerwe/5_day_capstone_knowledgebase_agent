@@ -24,7 +24,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
             key = key.strip()
             val = val.strip()
 
-            if val.startswith("[") and val.endswith("]"):
+            if val.startswith("[") and val.endswith("]") and not (val.startswith("[[") and val.endswith("]]")):
                 items = [item.strip().strip("'\"") for item in val[1:-1].split(",") if item.strip()]
                 meta[key] = items
             elif (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
@@ -73,7 +73,13 @@ def parse_markdown_file(filepath: str) -> dict[str, Any]:
         content = f.read()
 
     meta, body = parse_frontmatter(content)
-    links = extract_wiki_links(body)
+    
+    # Extract links from both body and metadata properties
+    temp_draft = {
+        "content": body,
+        **meta
+    }
+    links = extract_all_wiki_links(temp_draft)
     
     # Name from metadata or filename
     name = meta.get("name", entity_name)
@@ -133,14 +139,17 @@ def sync_single_file(filepath: str):
         factions = meta["faction_affiliations"]
         if isinstance(factions, list):
             for f in factions:
-                if f in known_entities:
-                    cursor.execute("INSERT INTO memberships (entity_name, faction_name, role) VALUES (?, ?, ?)", (name, f, "Member"))
+                clean_f = f[2:-2] if f.startswith("[[") and f.endswith("]]") else f
+                if clean_f in known_entities:
+                    cursor.execute("INSERT INTO memberships (entity_name, faction_name, role) VALUES (?, ?, ?)", (name, clean_f, "Member"))
     
     # 6. Insert Containment
     if parsed["entity_type"] == "Item" and "current_location" in meta:
         loc = meta["current_location"]
-        if loc and loc in known_entities:
-            cursor.execute("INSERT INTO containment (item_name, location_name) VALUES (?, ?)", (name, loc))
+        if loc:
+            clean_loc = loc[2:-2] if loc.startswith("[[") and loc.endswith("]]") else loc
+            if clean_loc in known_entities:
+                cursor.execute("INSERT INTO containment (item_name, location_name) VALUES (?, ?)", (name, clean_loc))
             
     conn.commit()
     conn.close()
@@ -206,14 +215,17 @@ def scan_and_sync_vault(vault_path: str):
             factions = meta["faction_affiliations"]
             if isinstance(factions, list):
                 for f in factions:
-                    if f in known_entities:
-                        cursor.execute("INSERT INTO memberships (entity_name, faction_name, role) VALUES (?, ?, ?)", (name, f, "Member"))
+                    clean_f = f[2:-2] if f.startswith("[[") and f.endswith("]]") else f
+                    if clean_f in known_entities:
+                        cursor.execute("INSERT INTO memberships (entity_name, faction_name, role) VALUES (?, ?, ?)", (name, clean_f, "Member"))
         
         # Containment
         if parsed["entity_type"] == "Item" and "current_location" in meta:
             loc = meta["current_location"]
-            if loc and loc in known_entities:
-                cursor.execute("INSERT INTO containment (item_name, location_name) VALUES (?, ?)", (name, loc))
+            if loc:
+                clean_loc = loc[2:-2] if loc.startswith("[[") and loc.endswith("]]") else loc
+                if clean_loc in known_entities:
+                    cursor.execute("INSERT INTO containment (item_name, location_name) VALUES (?, ?)", (name, clean_loc))
                 
     conn.commit()
     conn.close()
