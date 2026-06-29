@@ -6,8 +6,8 @@ aliases: ["Liam", "The Iron Bear"]
 tags: ["npc", "blacksmith", "secret"]
 age: "42"
 status: Alive
-faction_affiliations: ["The Bloodrunners", "Iron Guild"]
-current_location: Oakhaven Town
+faction_affiliations: ["[[The Bloodrunners]]", "[[Iron Guild]]"]
+current_location: [[Oakhaven Town]]
 physical_description: Tall, muscular, with soot-stained hands and a thick beard.
 personality_traits: ["Gruff", "Loyal", "Secretive"]
 ---

@@ -13,8 +13,8 @@ aliases: ["Liam", "The Iron Bear"]
 tags: ["npc", "blacksmith", "secret"]
 age: "42"
 status: Alive
-faction_affiliations: ["The Bloodrunners", "Iron Guild"]
-current_location: Oakhaven Town
+faction_affiliations: ["[[The Bloodrunners]]", "[[Iron Guild]]"]
+current_location: [[Oakhaven Town]]
 physical_description: Tall, muscular, with soot-stained hands and a thick beard.
 personality_traits: ["Gruff", "Loyal", "Secretive"]
 ---
@@ -27,10 +27,10 @@ entity_type: Location
 summary: A quiet logging town bordering the Whispering Woods.
 aliases: ["Oakhaven", "The Logging Capital"]
 tags: ["location", "town"]
-region: The Northern Reaches
+region: [[The Northern Reaches]]
 climate: Temperate, rainy
 population: "1200"
-controlling_faction: The Crown
+controlling_faction: [[The Crown]]
 ---
 [[Oakhaven Town]] is known for its timber. The most popular spot is [[The Rusty Anvil Tavern]]. It was the site of the [[Battle of Oakhaven]].
 """,
@@ -42,8 +42,8 @@ summary: A cursed warhammer that drains the life of its victims.
 aliases: ["The Sanguine Smasher"]
 tags: ["weapon", "cursed", "artifact"]
 item_type: Weapon
-creator: Liam the Blacksmith
-current_owner: Drakath
+creator: [[Liam the Blacksmith]]
+current_owner: [[Drakath]]
 materials: ["Dark Iron", "Vampiric Crystal"]
 ---
 Forged by [[Liam the Blacksmith]], this terrifying weapon is wielded by [[Drakath]]. It is rumored to have been used during the [[Battle of Oakhaven]].
@@ -55,11 +55,11 @@ entity_type: Faction
 summary: A ruthless band of mercenaries and assassins.
 aliases: ["Blood Guild", "The Red Shadows"]
 tags: ["faction", "mercenaries", "villains"]
-leader: Drakath
+leader: [[Drakath]]
 headquarters: Unknown
 goals: ["Wealth", "Chaos", "Control of the Northern Reaches"]
-allies: ["Shadow Syndicate"]
-enemies: ["The Crown", "Iron Guild"]
+allies: ["[[Shadow Syndicate]]"]
+enemies: ["[[The Crown]]", "[[Iron Guild]]"]
 ---
 Led by the fearsome [[Drakath]], the Bloodrunners operate in the shadows of [[Oakhaven Town]]. They employ secret members like [[Liam the Blacksmith]].
 """,
@@ -71,8 +71,8 @@ summary: A cataclysmic magical event that split the continent in two.
 aliases: ["The Breaking"]
 tags: ["event", "history", "cataclysm"]
 date: 1000 Years Ago
-participants: ["The Ancient Magi", "The Dragons"]
-locations_involved: ["The Northern Reaches"]
+participants: ["[[The Ancient Magi]]", "[[The Dragons]]"]
+locations_involved: ["[[The Northern Reaches]]"]
 outcome: Creation of the Chasm of Souls
 ---
 The Great Sundering changed the world forever. It wiped out many of the ancient [[Elves]], and altered the landscape near [[Oakhaven Town]].
@@ -85,7 +85,7 @@ summary: A long-lived, magically attuned race of humanoids.
 aliases: ["The Firstborn"]
 tags: ["species", "fey"]
 lifespan: 1000 years
-native_habitat: The Whispering Woods
+native_habitat: [[The Whispering Woods]]
 average_height: 6 feet
 distinctive_features: ["Pointed ears", "Glowing eyes", "Slender build"]
 ---
@@ -99,7 +99,7 @@ summary: The fundamental system of magic relying on drawing energy from the leyl
 aliases: ["Ley-Magic", "The Weave"]
 tags: ["magic", "concept"]
 category: Magic System
-related_entities: ["The Ancient Magi", "Elves"]
+related_entities: ["[[The Ancient Magi]]", "[[Elves]]"]
 ---
 Aetheric magic is heavily utilized by [[Elves]]. The flow of magic was permanently disrupted during [[The Great Sundering]]. Objects like the [[Bloodlust Warhammer]] are immune to its effects.
 """
@@ -121,7 +121,10 @@ def seed_vault():
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
             
-    print("Vault seeded successfully.")
+    print("Vault seeded successfully. Running database scan and sync...")
+    from app.parser import scan_and_sync_vault
+    scan_and_sync_vault(VAULT_DIR)
+    print("Database sync complete.")
 
 if __name__ == "__main__":
     seed_vault()
