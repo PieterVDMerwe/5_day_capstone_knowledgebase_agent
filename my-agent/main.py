@@ -31,6 +31,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Lore Vault API", lifespan=lifespan)
 
+from app.wizard_generators import generate_suggested_fields
+
 # Universal Protocol Envelope ensuring UI consistency
 class ApiResponse(BaseModel):
     status: str
@@ -40,6 +42,7 @@ class ApiResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     user_message: str
+    chat_mode: Optional[str] = "lore_base" # "lore_base" or "direct_llm"
     draft_state: Optional[Dict[str, Any]] = None
     chat_history: Optional[List[Dict[str, str]]] = None
     provider: Optional[str] = "gemini"
@@ -47,6 +50,12 @@ class ChatRequest(BaseModel):
 
 class SaveRequest(BaseModel):
     draft_state: Dict[str, Any]
+    provider: Optional[str] = "gemini"
+    model: Optional[str] = "gemini-2.5-flash"
+
+class WizardContentRequest(BaseModel):
+    draft_state: Dict[str, Any]
+    instruction: Optional[str] = ""
     provider: Optional[str] = "gemini"
     model: Optional[str] = "gemini-2.5-flash"
 
@@ -67,60 +76,16 @@ async def chat_endpoint(req: ChatRequest):
         if req.model:
             llm_client.model_name = req.model
             
-        route = orchestrator.route_request(req.user_message)
-        
-        if route == "editor_agent":
-            # Heuristic for demo purposes
-            entity_type = "General" 
-            low_msg = req.user_message.lower()
-            if "location" in low_msg or "town" in low_msg: entity_type = "Location"
-            elif "item" in low_msg or "weapon" in low_msg: entity_type = "Item"
-            elif "faction" in low_msg: entity_type = "Faction"
-            elif "character" in low_msg or "npc" in low_msg: entity_type = "Character"
-            elif "event" in low_msg: entity_type = "Event"
-            elif "species" in low_msg: entity_type = "Species"
-            
-            import re
-            from app.context_tools import get_entity_graph
-            from app.database import get_db_connection
-            
-            # Fetch context for mentioned capitalized words
-            context_graph = ""
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM entities")
-            known_entities = {row["name"] for row in cursor.fetchall()}
-            conn.close()
-            
-            words = set(re.findall(r'\b[A-Z][a-z]*\b', req.user_message))
-            found_contexts = []
-            for w in words:
-                if w in known_entities:
-                    found_contexts.append(get_entity_graph(w))
-            if found_contexts:
-                context_graph = "\n\n".join(found_contexts)
-                
-            draft = editor_agent.draft_entity(
-                req.user_message, 
-                entity_type=entity_type,
-                current_draft=req.draft_state,
-                context_graph=context_graph
-            )
-            
-            msg = "Draft generated successfully."
-            status = "success"
-            if "_linter_error" in draft:
-                msg = f"Draft generated with linter warnings: {draft.pop('_linter_error')}"
-                status = "warning"
-                
+        if req.chat_mode == "direct_llm":
+            # Simple text prompt without RAG/context
+            answer = llm_client.generate(prompt=req.user_message)
             return ApiResponse(
-                status=status,
-                current_step="Drafting Complete",
-                data={"draft": draft, "route": route},
-                message=msg
+                status="success",
+                current_step="Direct LLM Answered",
+                data={"answer": answer, "route": "direct_llm"},
+                message="LLM responded directly."
             )
-            
-        else: # lore_seeker
+        else: # lore_base
             context_entity = None
             if req.draft_state and "name" in req.draft_state:
                 context_entity = req.draft_state["name"]
@@ -129,8 +94,8 @@ async def chat_endpoint(req: ChatRequest):
             return ApiResponse(
                 status="success",
                 current_step="Query Answered",
-                data={"answer": answer, "route": route},
-                message="Successfully queried the lore."
+                data={"answer": answer, "route": "lore_base"},
+                message="Successfully queried the lore base."
             )
             
     except Exception as e:
@@ -312,6 +277,79 @@ async def get_schemas():
         return ApiResponse(status="success", current_step="Schemas Fetched", data=schemas, message="Loaded schemas")
     except Exception as e:
         return ApiResponse(status="error", current_step="Fetch Error", data=None, message=str(e))
+
+@app.get("/api/wizard/suggest", response_model=ApiResponse)
+async def wizard_suggest_endpoint(entity_type: str):
+    try:
+        data = generate_suggested_fields(entity_type)
+        return ApiResponse(
+            status="success",
+            current_step="Wizard Suggestion",
+            data=data,
+            message="Suggested fields generated procedurally."
+        )
+    except Exception as e:
+        return ApiResponse(status="error", current_step="Wizard Error", data=None, message=str(e))
+
+@app.post("/api/wizard/generate-content", response_model=ApiResponse)
+async def wizard_generate_content_endpoint(req: WizardContentRequest):
+    try:
+        import json
+        if req.provider:
+            llm_client.provider = req.provider
+        if req.model:
+            llm_client.model_name = req.model
+            
+        draft = req.draft_state
+        prompt = (
+            f"Based on the following worldbuilding metadata:\n{json.dumps(draft, indent=2)}\n\n"
+        )
+        if req.instruction:
+            prompt += f"Special instruction/regeneration request: {req.instruction}\n\n"
+            
+        prompt += (
+            "Generate:\n"
+            "1. A 1-2 sentence 'summary' of this entity.\n"
+            "2. A cohesive worldbuilding lore text 'content' (markdown body content) describing this entity, "
+            "its relationships, and its role in the world.\n\n"
+            "You MUST output strictly in JSON format with two keys: 'summary' and 'content'.\n"
+            "Do not nest anything. Ensure the JSON is valid and clean."
+        )
+        
+        system_instruction = (
+            "You are the Editor Agent. Your job is to write a compelling lore description "
+            "based strictly on the provided metadata fields. Output ONLY a clean JSON object."
+        )
+        
+        raw_json_str = llm_client.generate(prompt=prompt, system_instruction=system_instruction)
+        raw_json_str = raw_json_str.strip()
+        
+        import re
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw_json_str, re.DOTALL)
+        if json_match:
+            raw_json_str = json_match.group(1)
+        else:
+            start = raw_json_str.find('{')
+            end = raw_json_str.rfind('}')
+            if start != -1 and end != -1:
+                raw_json_str = raw_json_str[start:end+1]
+                
+        try:
+            res_data = json.loads(raw_json_str)
+        except Exception:
+            res_data = {
+                "summary": "Generated summary failed to parse.",
+                "content": raw_json_str
+            }
+            
+        return ApiResponse(
+            status="success",
+            current_step="Wizard Content Generated",
+            data=res_data,
+            message="Lore content generated by LLM."
+        )
+    except Exception as e:
+        return ApiResponse(status="error", current_step="Wizard Content Error", data=None, message=str(e))
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "app", "static")
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

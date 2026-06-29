@@ -1,19 +1,24 @@
 # Agent Handoff Document
 
 ## Current Status
-**Phase 5: The "Save & Sync" Loop & Graph Visualization** has been successfully completed, along with auto-generated Stub Notes.
+**Workflow Rework: Procedural Note Generation Wizard & Chat Simplification** has been successfully completed.
 
 ### What was built:
-1. **Save & Sync Backend**: Built the `/api/save` endpoint in `main.py` which intercepts the frontend JSON, extracts `[[Wikilinks]]`, automatically generates empty "stub" notes for links that don't exist, and synchronously updates the Obsidian Markdown files and the SQLite graph database.
-2. **Dynamic D3 Graph**: Implemented a comprehensive Vault Explorer Graph in `ui_graph.js`. It utilizes Google Material Symbols to represent different entity types accurately (e.g., swords for items, castles for locations) with a sleek monochrome aesthetic.
-3. **Graph Filtering**: Added the ability to toggle visibility of empty stub notes on the graph. Stub notes are generated automatically when a user links to an entity that doesn't yet exist in the DB.
-4. **Resilient Validation**: Updated `validators.py` to seamlessly catch frontend type mismatches (like comma-separated strings instead of lists, or lists instead of strings from LLMs) and aggressively fix them without failing the pipeline.
+1. **Procedural Seed Engine (`app/wizard_generators.py`)**: Built a robust fantasy seed data engine that generates names, species, biomes, relics, and factions. It queries the SQLite DB to dynamically assign random relationships from existing entities (near and far) while handling the cold-start (empty database) state safely.
+2. **Wizard API Endpoints (`main.py`)**:
+   - `GET /api/wizard/suggest`: Exposes the seed engine to fetch pre-populated drafts.
+   - `POST /api/wizard/generate-content`: Formulates a clean LLM prompt to write the summary and body content strictly from the validated metadata fields.
+3. **Step-by-Step Stepper Wizard (`index.html` & `wizard_controller.js`)**: A modal overlay UI that walks the user through creating notes:
+   - **Step 1:** Choose Type.
+   - **Step 2:** Edit/Review procedural fields.
+   - **Step 3:** Generate Lore description with a dedicated "Regenerate Content" button + custom user instructions.
+   - **Step 4:** Final Review before calling `/api/save`.
+4. **Chat Decoupling & Mode Switch**: Restricted the left chat panel strictly to read-only queries. Added a tab switch at the bottom of the chat panel to toggle between RAG ("Lore Base" querying context tools) and direct, abstract prompts ("Direct LLM" passing text-only prompts without tool calls).
 
 ### How it works:
-- Draft or modify an entity in the UI and click "Save". 
-- The backend writes the `.md` file to the Vault and incrementally updates the DB.
-- Any wikilinks inside the draft (both body and metadata) are checked. If they don't exist, an empty stub note (`is_empty: true`) is created for them instantly.
-- The Vault Explorer dynamically re-renders to reflect these connections with beautiful Material Symbols.
+- Click the green **+ New Note** button in the Editor actions.
+- Walk through the stepper modal to create a note using seeded/procedural fields, generate content via the LLM, and save.
+- Toggle between "Lore Base" and "Direct LLM" in the chat panel to query the database vs. prompt the model directly.
 
 ### Next Phase Requires:
 - **Phase 6: Supporting Skills Development**

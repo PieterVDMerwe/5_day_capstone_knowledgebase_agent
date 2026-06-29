@@ -32,10 +32,17 @@
         <!-- Left Panel: Chat -->
         <section id="chat-panel" style="width: 350px; flex: none; min-width: 250px;">
             <div id="chat-history">
-                <div class="message system">Welcome to Lore Vault Studio. Describe an entity to draft it, or ask a question about the lore!</div>
+                <div class="message system">Welcome to Lore Vault Studio. Ask a question about the lore base, or toggle to talk to the LLM directly!</div>
             </div>
+            
+            <!-- Chat Mode Selector -->
+            <div id="chat-mode-selector" style="display: flex; background: var(--bg-color); border: 1px solid var(--border); border-radius: 4px; margin: 0 20px 10px; padding: 2px; flex: none;">
+                <button id="chat-mode-lore" class="active" style="flex: 1; padding: 6px; font-size: 11px; background: var(--accent); border-radius: 3px; border: none; color: white; cursor: pointer; font-weight: bold; transition: all 0.2s;">Lore Base</button>
+                <button id="chat-mode-llm" style="flex: 1; padding: 6px; font-size: 11px; background: transparent; border-radius: 3px; border: none; color: var(--text-muted); cursor: pointer; font-weight: bold; transition: all 0.2s;">Direct LLM</button>
+            </div>
+            
             <div id="chat-input-container">
-                <input type="text" id="chat-input" placeholder="Type your query or instruction..." />
+                <input type="text" id="chat-input" placeholder="Ask a question about the lore..." />
                 <button id="send-btn">Send</button>
             </div>
             <div id="status-indicator">Status: Idle</div>
@@ -47,7 +54,8 @@
         <section id="editor-panel" style="flex: 1 1 auto; min-width: 300px;">
             <div id="editor-header">
                 <h2>Entity Editor</h2>
-                <div class="actions">
+                <div class="actions" style="display: flex; align-items: center;">
+                    <button id="new-note-btn" style="background-color: var(--success); color: white; margin-right: 15px;">+ New Note</button>
                     <button id="save-btn" disabled>Save to Vault</button>
                     <button id="discard-btn" disabled>Discard</button>
                     <button id="delete-btn" disabled style="background-color: var(--danger-color, #d32f2f); color: white; margin-left: 10px;">Delete</button>
@@ -101,10 +109,125 @@
         </div>
     </div>
 
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .wizard-type-btn:hover {
+            border-color: var(--accent) !important;
+            background: var(--panel-bg) !important;
+        }
+        .wizard-type-btn.selected {
+            border-color: var(--accent) !important;
+            background: rgba(59, 130, 246, 0.1) !important;
+        }
+    </style>
+
+    <!-- New Note Wizard Modal -->
+    <div id="wizard-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+        <div style="background: var(--panel-bg); width: 650px; max-width: 90%; max-height: 85vh; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+            
+            <!-- Wizard Header -->
+            <div style="padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <h2 id="wizard-title" style="margin: 0; font-size: 16px; color: var(--text-color);">New Note Wizard - Step 1: Choose Type</h2>
+                <button id="wizard-close-btn" style="background: transparent; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 0;">&times;</button>
+            </div>
+            
+            <!-- Wizard Progress Bar -->
+            <div style="height: 4px; background: var(--bg-color); position: relative; width: 100%;">
+                <div id="wizard-progress" style="height: 100%; background: var(--accent); width: 25%; transition: width 0.3s ease;"></div>
+            </div>
+            
+            <!-- Wizard Body -->
+            <div id="wizard-body" style="flex: 1; padding: 25px; overflow-y: auto; color: var(--text-color);">
+                
+                <!-- Step 1 Content: Choose Type -->
+                <div id="wizard-step-1" class="wizard-step">
+                    <p style="margin-top: 0; color: var(--text-muted); margin-bottom: 20px;">Select the type of lore entity you want to create:</p>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <button class="wizard-type-btn" data-type="Character" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">👤 Character</strong>
+                            NPCs, historical figures, or monsters.
+                        </button>
+                        <button class="wizard-type-btn" data-type="Location" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">🏰 Location</strong>
+                            Cities, regions, biomes, or structures.
+                        </button>
+                        <button class="wizard-type-btn" data-type="Item" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">⚔ Item</strong>
+                            Weapons, relics, artifacts, or items.
+                        </button>
+                        <button class="wizard-type-btn" data-type="Faction" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">🛡 Faction</strong>
+                            Guilds, cults, alliances, or nations.
+                        </button>
+                        <button class="wizard-type-btn" data-type="Event" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">🔥 Event</strong>
+                            Battles, coronations, treaties, or catastrophes.
+                        </button>
+                        <button class="wizard-type-btn" data-type="Species" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">🐾 Species</strong>
+                            Races, beasts, or biological classifications.
+                        </button>
+                        <button class="wizard-type-btn" data-type="General" style="padding: 15px; background: var(--bg-color); border: 1px solid var(--border); color: var(--text-color); font-weight: normal; border-radius: 6px; text-align: left; cursor: pointer; grid-column: span 2;">
+                            <strong style="display: block; font-size: 14px; color: var(--accent); margin-bottom: 5px;">📖 General Lore</strong>
+                            Magic systems, concepts, holidays, or quests.
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Step 2 Content: Generate/Edit Fields -->
+                <div id="wizard-step-2" class="wizard-step" style="display: none;">
+                    <p style="margin-top: 0; color: var(--text-muted); margin-bottom: 20px;">Suggested metadata generated procedurally. You can modify these fields before generating the lore description:</p>
+                    <form id="wizard-fields-form" style="display: flex; flex-direction: column; gap: 15px;"></form>
+                </div>
+                
+                <!-- Step 3 Content: Generate Lore -->
+                <div id="wizard-step-3" class="wizard-step" style="display: none;">
+                    <div id="wizard-lore-generating" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 0;">
+                        <div style="border: 4px solid var(--border); border-top: 4px solid var(--accent); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+                        <p style="margin: 0; color: var(--text-muted);">The Editor Agent is composing the lore summary and description...</p>
+                    </div>
+                    <div id="wizard-lore-result" style="display: none; flex-direction: column; gap: 15px;">
+                        <div>
+                            <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Generated Summary</label>
+                            <input type="text" id="wizard-summary-result" style="width: 100%;" />
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Generated Content (Markdown)</label>
+                            <textarea id="wizard-content-result" style="width: 100%; height: 180px; font-family: monospace;"></textarea>
+                        </div>
+                        
+                        <div style="border-top: 1px solid var(--border); padding-top: 15px; display: flex; gap: 10px; align-items: center;">
+                            <input type="text" id="wizard-regen-instruction" placeholder="Optional instruction (e.g. 'make it darker', 'add details')" style="flex: 1; font-size: 13px;" />
+                            <button id="wizard-regen-btn" style="background: var(--border); color: var(--text-color); font-size: 13px;">🔄 Regenerate Content</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 4 Content: Final Review -->
+                <div id="wizard-step-4" class="wizard-step" style="display: none;">
+                    <p style="margin-top: 0; color: var(--text-muted); margin-bottom: 20px;">Final review of the generated entity. Hit **Create Note** to save it to your Vault and SQLite graph!</p>
+                    <div id="wizard-review-container" style="background: var(--bg-color); border: 1px solid var(--border); border-radius: 6px; padding: 20px; font-family: monospace; white-space: pre-wrap; max-height: 250px; overflow-y: auto; font-size: 13px; color: var(--text-muted);"></div>
+                </div>
+                
+            </div>
+            
+            <!-- Wizard Footer -->
+            <div style="padding: 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; background: var(--bg-color);">
+                <button id="wizard-prev-btn" style="background: var(--border); color: var(--text-color);" disabled>Back</button>
+                <button id="wizard-next-btn" style="background: var(--accent); color: white;" disabled>Next</button>
+            </div>
+            
+        </div>
+    </div>
+
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="/js/ui_renderer.js"></script>
     <script src="/js/ui_state.js"></script>
     <script src="/js/ui_graph.js?v=3"></script>
     <script src="/js/ui_layout.js"></script>
+    <script src="/js/wizard_controller.js"></script>
 </body>
 </html>

@@ -74,6 +74,26 @@ function revertToAppropriateState() {
     }
 }
 
+let chatMode = 'lore_base';
+
+document.getElementById('chat-mode-lore')?.addEventListener('click', () => {
+    chatMode = 'lore_base';
+    document.getElementById('chat-mode-lore').style.background = 'var(--accent)';
+    document.getElementById('chat-mode-lore').style.color = 'white';
+    document.getElementById('chat-mode-llm').style.background = 'transparent';
+    document.getElementById('chat-mode-llm').style.color = 'var(--text-muted)';
+    document.getElementById('chat-input').placeholder = "Ask a question about the lore...";
+});
+
+document.getElementById('chat-mode-llm')?.addEventListener('click', () => {
+    chatMode = 'direct_llm';
+    document.getElementById('chat-mode-llm').style.background = 'var(--accent)';
+    document.getElementById('chat-mode-llm').style.color = 'white';
+    document.getElementById('chat-mode-lore').style.background = 'transparent';
+    document.getElementById('chat-mode-lore').style.color = 'var(--text-muted)';
+    document.getElementById('chat-input').placeholder = "Talk to the LLM directly...";
+});
+
 document.getElementById('send-btn').addEventListener('click', async () => {
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
@@ -84,6 +104,7 @@ document.getElementById('send-btn').addEventListener('click', async () => {
     
     const reqBody = {
         user_message: text,
+        chat_mode: chatMode,
         provider: document.getElementById('llm-provider-select')?.value || 'gemini',
         model: document.getElementById('llm-model-input')?.value || 'gemini-2.5-flash'
     };
@@ -103,12 +124,7 @@ document.getElementById('send-btn').addEventListener('click', async () => {
         const data = await res.json();
         
         if (data.status === 'success' || data.status === 'warning') {
-            if (data.data.route === 'editor_agent' && data.data.draft) {
-                window.currentDraft = data.data.draft;
-                renderForm(window.currentDraft);
-                document.querySelector('.placeholder-text').style.display = 'none';
-                updateStatus(State.DRAFT_RECEIVED);
-            } else if (data.data.route === 'lore_seeker' && data.data.answer) {
+            if (data.data.answer) {
                 appendMessage('agent', data.data.answer);
                 revertToAppropriateState();
             }
